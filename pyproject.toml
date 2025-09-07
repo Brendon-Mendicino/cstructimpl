@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cstructimpl"
+version = "0.1.0"
+description = "Python package to translate C struct to classes"
+dependencies = []
+authors = [
+    {name = "Brendon Mendicino"}
+]
+readme = "README.md"
+license = "Apache-2.0"
+classifiers = [
+    "Development Status :: 4 - Beta",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.urls]
+Repository = "https://github.com/Brendon-Mendicino/c_struct"
+Issues = "https://github.com/Brendon-Mendicino/c_struct/issues"
