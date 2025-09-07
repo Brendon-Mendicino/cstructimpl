@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from c_struct import *
+from cstructimpl import *
 
 
 class TwoFields(CStruct):
