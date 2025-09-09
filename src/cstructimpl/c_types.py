@@ -12,11 +12,11 @@ else:
 
     def batched(iterable, n: int):
         while True:
-            batch = islice(iterable, n, None)
+            batch = tuple(islice(iterable, n, None))
             if len(batch) == 0:
                 break
 
-            yield tuple(batch)
+            yield batch
 
     Self = object
 
