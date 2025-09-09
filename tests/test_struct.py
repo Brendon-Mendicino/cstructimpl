@@ -1,5 +1,4 @@
 from enum import Enum
-from pprint import pp
 from typing import Annotated
 
 from cstructimpl import *
@@ -47,3 +46,24 @@ def test_autocast_with_enums():
         person: Annotated[PersonType, CType.U8, Autocast()]
 
     assert Person.c_build(bytes([18, 0, 1, 0])) == Person(18, PersonType.SAD)
+
+
+def test_struct_with_lists():
+    class Inner(CStruct, align=2):
+        first: Annotated[int, CType.U8]
+        second: Annotated[int, CType.U8]
+        third: Annotated[int, CType.U8]
+
+    class MyList(CStruct):
+        list: Annotated[list[Inner], CArray(Inner, 3)]
+
+    data = bytes(range(1, 13))  # 3 items × 4 bytes each
+    parsed = MyList.c_build(data)
+
+    assert parsed == MyList(
+        [
+            Inner(1, 2, 3),
+            Inner(5, 6, 7),
+            Inner(9, 10, 11),
+        ]
+    )

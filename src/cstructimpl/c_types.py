@@ -2,7 +2,7 @@ import sys
 
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Callable, Generic, Literal, Protocol, TypeVar, runtime_checkable
+from typing import Callable, Generic, Literal, Protocol, TypeVar, cast, runtime_checkable
 from itertools import islice
 
 if sys.version_info >= (3, 12):
@@ -169,8 +169,7 @@ class CArray(Generic[T]):
         byteorder: Literal["little", "big"] = "little",
         signed: bool | None = None,
     ) -> list[T]:
-        if signed is None:
-            signed = self.c_signed()
+        _ = signed
 
         if len(raw) != self.c_size():
             raise ValueError(
@@ -178,7 +177,7 @@ class CArray(Generic[T]):
             )
 
         return [
-            self.ctype.c_build(cell_bytes, byteorder=byteorder)
+            cast(T, self.ctype.c_build(bytes(cell_bytes), byteorder=byteorder))
             for cell_bytes in batched(raw, self.ctype.c_size())
         ]
 

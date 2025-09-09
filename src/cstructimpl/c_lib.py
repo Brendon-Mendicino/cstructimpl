@@ -4,7 +4,7 @@ import sys
 
 from dataclasses import Field, dataclass, fields, is_dataclass
 from itertools import islice
-from typing import Callable, Generic, Literal, TypeVar
+from typing import Callable, Generic, Literal, TypeVar, get_origin
 
 from .c_annotations import Autocast
 from .c_types import BaseType, CBuilder, HasBaseType, CPadding
@@ -18,7 +18,8 @@ T = TypeVar("T")
 
 
 def _get_origin(t: type) -> type:
-    return getattr(t, "__origin__", t)
+    origin = getattr(t, "__origin__", t)
+    return get_origin(origin) or origin
 
 
 def _get_field_origin(f: Field) -> type:
@@ -195,6 +196,7 @@ class _UnionTypeHandler(Generic[T]):
         if self.strict:
             _strict_dataclass_fields_check(self.cls, cls_items)
 
+        # TODO: make union fields lazyly evalutated
         return self.cls(*cls_items)
 
 

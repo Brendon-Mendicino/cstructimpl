@@ -1,4 +1,5 @@
-"""# `cstructimpl`
+"""
+# `cstructimpl`
 
 > A Python package for translating C `struct`s into Python classes.
 
@@ -78,6 +79,114 @@ The library comes with a set of ready-to-use type definitions that cover the maj
 
 ---
 
+## 📌 Examples
+
+Here are a few practical examples showing how `cstructimpl` works in real-world scenarios.
+
+### Basic Struct
+
+Define a simple struct with two fields:
+
+```python
+class Point(CStruct):
+    x: Annotated[int, CType.U8]
+    y: Annotated[int, CType.U8]
+
+
+assert Point.c_size() == 2
+assert Point.c_align() == 1
+assert Point.c_build(bytes([1, 2])) == Point(1, 2)
+```
+
+---
+
+### Nested Structs
+
+You can embed structs inside other structs:
+
+```python
+class Dimensions(CStruct):
+    width: Annotated[int, CType.U8]
+    height: Annotated[int, CType.U8]
+
+
+class Rectangle(CStruct):
+    id: Annotated[int, CType.U16]
+    dims: Dimensions
+
+
+assert Rectangle.c_size() == 4
+assert Rectangle.c_align() == 2
+assert Rectangle.c_build(bytes([1, 0, 2, 3])) == Rectangle(1, Dimensions(2, 3))
+```
+
+---
+
+### Strings in Structs
+
+Support for C-style null-terminated strings:
+
+```python
+class Message(CStruct):
+    length: Annotated[int, CType.U16]
+    text: Annotated[str, CStr(5)]
+
+
+raw = bytes([5, 0]) + b"Helo\x00"
+assert Message.c_build(raw) == Message(5, "Helo")
+```
+
+---
+
+### Enums with Autocast
+
+Automatically cast numeric values into Python `Enum`s:
+
+```python
+class Mood(Enum):
+    HAPPY = 0
+    SAD = 1
+
+
+class Person(CStruct):
+    age: Annotated[int, CType.U16]
+    mood: Annotated[Mood, CType.U8, Autocast()]
+
+
+raw = bytes([18, 0, 1, 0])
+assert Person.c_build(raw) == Person(18, Mood.SAD)
+```
+
+---
+
+### Arrays of Structs
+
+Define fixed-size arrays of structs inside another struct:
+
+```python
+class Item(CStruct, align=2):
+    a: Annotated[int, CType.U8]
+    b: Annotated[int, CType.U8]
+    c: Annotated[int, CType.U8]
+
+
+class ItemList(CStruct):
+    items: Annotated[list[Item], CArray(Item, 3)]
+
+
+data = bytes(range(1, 13))  # 3 items × 4 bytes each
+parsed = ItemList.c_build(data)
+
+assert parsed == ItemList([
+    Item(1, 2, 3),
+    Item(5, 6, 7),
+    Item(9, 10, 11),
+])
+```
+
+---
+
+
 ## 🎭 Autocast
 
 Sometimes raw numeric values carry semantic meaning. In C, this is usually handled with `enum`s.
@@ -153,6 +262,7 @@ If you'd like to improve `cstructimpl`, please open an issue or submit a pull re
 ## 📜 License
 
 This project is licensed under the terms of the [Apache-2.0 License](https://github.com/Brendon-Mendicino/cstructimpl/blob/main/LICENSE).
+
 """
 
 from . import c_lib
