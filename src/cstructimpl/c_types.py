@@ -22,11 +22,14 @@ else:
 
 
 T = TypeVar("T")
+T_co = TypeVar("T_co", covariant=True)
 U = TypeVar("U")
 
 
 @runtime_checkable
-class BaseType(Protocol[T]):
+class BaseType(Protocol[T_co]):
+    """Protocol specification to parse a raw bytes into a
+    structure."""
 
     def c_size(self) -> int: ...
 
@@ -40,7 +43,7 @@ class BaseType(Protocol[T]):
         *,
         byteorder: Literal["little", "big"] = "little",
         signed: bool | None = None,
-    ) -> T | None: ...
+    ) -> T_co | None: ...
 
 
 @runtime_checkable
