@@ -2,7 +2,7 @@ import sys
 
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Generic, Literal, Protocol, TypeVar, runtime_checkable
+from typing import Callable, Generic, Literal, Protocol, TypeVar, runtime_checkable
 from itertools import islice
 
 if sys.version_info >= (3, 12):
@@ -22,6 +22,7 @@ else:
 
 
 T = TypeVar("T")
+U = TypeVar("U")
 
 
 @runtime_checkable
@@ -46,6 +47,33 @@ class BaseType(Protocol[T]):
 class HasBaseType(Protocol):
     @classmethod
     def c_get_type(cls) -> BaseType[Self]: ...
+
+
+@dataclass
+class GetType:
+    """Extracts a ctype from a class type."""
+
+    has_ctype: HasBaseType
+
+    def c_size(self) -> int:
+        return self.has_ctype.c_get_type().c_size()
+
+    def c_align(self) -> int:
+        return self.has_ctype.c_get_type().c_align()
+
+    def c_signed(self) -> bool:
+        return self.has_ctype.c_get_type().c_signed()
+
+    def c_build(
+        self,
+        raw: bytes,
+        *,
+        byteorder: Literal["little", "big"] = "little",
+        signed: bool | None = None,
+    ):
+        return self.has_ctype.c_get_type().c_build(
+            raw, byteorder=byteorder, signed=signed
+        )
 
 
 class CType(Enum):
@@ -118,22 +146,20 @@ class CType(Enum):
         return int.from_bytes(raw, byteorder=byteorder, signed=signed)
 
 
+@dataclass
 class CArray(Generic[T]):
-    def __init__(self, ctype: HasBaseType | BaseType[T], array_size: int):
-        if isinstance(ctype, BaseType):
-            self.type = ctype
-        else:
-            self.type = ctype.c_get_type()
+    """Represents a generic sized array."""
 
-        self.array_size = array_size
+    ctype: BaseType[T]
+    array_size: int
 
     def c_size(self) -> int:
-        return self.type.c_size() * self.array_size
+        return self.ctype.c_size() * self.array_size
 
     def c_align(self) -> int:
-        return self.type.c_align()
+        return self.ctype.c_align()
 
-    def c_signed(self) -> int:
+    def c_signed(self) -> bool:
         raise NotImplementedError()
 
     def c_build(
@@ -152,8 +178,8 @@ class CArray(Generic[T]):
             )
 
         return [
-            self.type.c_build(cell_bytes, byteorder=byteorder)
-            for cell_bytes in batched(raw, self.type.c_size())
+            self.ctype.c_build(cell_bytes, byteorder=byteorder)
+            for cell_bytes in batched(raw, self.ctype.c_size())
         ]
 
 
@@ -182,3 +208,76 @@ class CPadding:
         _ = raw, byteorder, signed
 
         return None
+
+
+@dataclass
+class CStr:
+    """Represents C string with a null-termination character."""
+
+    array_size: int
+    align: int = 1
+    encoding: str = "utf-8"
+
+    def c_size(self) -> int:
+        return self.array_size
+
+    def c_align(self) -> int:
+        return self.align
+
+    def c_signed(self) -> bool:
+        raise NotImplementedError("This method should not be called!")
+
+    def c_build(
+        self,
+        raw: bytes,
+        *,
+        byteorder: Literal["little", "big"] = "little",
+        signed: bool | None = None,
+    ) -> str:
+        _ = byteorder, signed
+
+        if len(raw) != self.array_size:
+            raise ValueError(
+                f"The raw bytes did not have the same lenght of the type! {self=} {len(raw)=}"
+            )
+
+        # Find null-terminator
+        null_index = raw.find(b"\x00")
+        if null_index == -1:
+            raise ValueError(
+                f"The null-terminator was not found while parsing a string. {self=} {raw=}"
+            )
+
+        return bytes(islice(raw, null_index)).decode(self.encoding)
+
+
+@dataclass
+class CBuilder(Generic[T, U]):
+    """Builds a generic object starting from a `BaseType`."""
+
+    ctype: BaseType[U]
+    builder: Callable[[U | None], T]
+
+    def c_size(self) -> int:
+        return self.ctype.c_size()
+
+    def c_align(self) -> int:
+        return self.ctype.c_align()
+
+    def c_signed(self) -> bool:
+        return self.ctype.c_signed()
+
+    def c_build(
+        self,
+        raw: bytes,
+        *,
+        byteorder: Literal["little", "big"] = "little",
+        signed: bool | None = None,
+    ) -> T:
+        return self.builder(
+            self.ctype.c_build(
+                raw,
+                byteorder=byteorder,
+                signed=signed,
+            )
+        )
