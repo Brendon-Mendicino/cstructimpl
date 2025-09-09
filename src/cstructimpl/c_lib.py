@@ -1,4 +1,5 @@
-import inspect
+"""Decorators and classes to extend types."""
+
 import sys
 
 from dataclasses import Field, dataclass, fields, is_dataclass

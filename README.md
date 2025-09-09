@@ -146,7 +146,7 @@ More detailed usage examples and advanced topics are available in the [documenta
 
 Contributions are welcome!  
 
-If you’d like to improve `cstructimpl`, please open an issue or submit a pull request on [GitHub](https://github.com/Brendon-Mendicino/cstructimpl).
+If you'd like to improve `cstructimpl`, please open an issue or submit a pull request on [GitHub](https://github.com/Brendon-Mendicino/cstructimpl).
 
 ---
 
