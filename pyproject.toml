@@ -19,7 +19,6 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
     "Topic :: Software Development :: Code Generators",
     "Topic :: Utilities",
-    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -27,7 +26,6 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Typing :: Typed",
-
 ]
 
 [project.optional-dependencies]
