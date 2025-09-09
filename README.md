@@ -183,6 +183,45 @@ assert parsed == ItemList([
 ])
 ```
 
+### Custom BaseType
+
+> > Hey! Is there a type that serializes an HashMap of list of structs of ...?
+> 
+> > Yeah! Sure there is! You can do it yourself!
+
+`cstructimpl` lets you define your own `BaseType` implementations to handle any kind of data that  is not present among the built-in primitives.
+
+For example, here's a custom type that interprets a raw integer as a **Unix timestamp**, returning a Python `datetime` object:
+
+```python
+class UnixTimestamp(BaseType[datetime]):
+    def __init__(self, bits: int = 32):
+        self.bits = bits
+
+    def c_size(self) -> int:
+        return self.bits // 8
+
+    def c_align(self) -> int:
+        return self.c_size()
+
+    def c_signed(self) -> bool:
+        return False
+
+    def c_build(self, raw: bytes, *, byteorder="little", signed=False) -> datetime:
+        ts = int.from_bytes(raw, byteorder=byteorder, signed=signed)
+        return datetime.utcfromtimestamp(ts)
+    
+
+    @dataclass
+    class LogEntry(CStruct):
+        timestamp: Annotated[datetime, UnixTimestamp()]
+        level: Annotated[int, CType.U8]
+
+
+    parsed = LogEntry.c_build(bytes([255, 0, 0, 0, 3, 0, 0, 0]))
+    assert parsed == LogEntry(datetime.fromtimestamp(255), 3)
+```
+
 ---
 
 

@@ -1,5 +1,7 @@
+from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
-from typing import Annotated
+from typing import Annotated, Literal
 
 from cstructimpl import *
 
@@ -49,11 +51,13 @@ def test_autocast_with_enums():
 
 
 def test_struct_with_lists():
+    @dataclass
     class Inner(CStruct, align=2):
         first: Annotated[int, CType.U8]
         second: Annotated[int, CType.U8]
         third: Annotated[int, CType.U8]
 
+    @dataclass
     class MyList(CStruct):
         list: Annotated[list[Inner], CArray(Inner, 3)]
 
@@ -67,3 +71,28 @@ def test_struct_with_lists():
             Inner(9, 10, 11),
         ]
     )
+
+def test_custom_defined_base_type():
+    @dataclass
+    class UnixTimestamp:
+        def c_size(self) -> int:
+            return 4
+
+        def c_align(self) -> int:
+            return 4
+
+        def c_signed(self) -> bool:
+            return False
+
+        def c_build(self, raw: bytes, *, byteorder:Literal["little", "big"]="little", signed=False,) -> datetime:
+            ts = int.from_bytes(raw, byteorder=byteorder, signed=signed)
+            return datetime.fromtimestamp(ts)
+
+    @dataclass
+    class LogEntry(CStruct):
+        timestamp: Annotated[datetime, UnixTimestamp()]
+        level: Annotated[int, CType.U8]
+
+    parsed = LogEntry.c_build(bytes([255, 0, 0, 0, 3, 0, 0, 0]))
+    assert parsed == LogEntry(datetime.fromtimestamp(255), 3)
+        
