@@ -32,7 +32,7 @@ class Person(CStruct):
     name: Annotated[str, CStr(6)]
 
 
-person = Person.c_build(bytes([18, 170]) + b"Pippo\x00")
+person = Person.c_decode(bytes([18, 170]) + b"Pippo\x00")
 print(person)  # Person(info=Info(age=18, height=170), name='Pippo')
 ```
 
@@ -58,7 +58,7 @@ class BaseType(Protocol[T]):
     def c_align(self) -> int: ...
     def c_signed(self) -> bool: ...
 
-    def c_build(
+    def c_decode(
         self,
         raw: bytes,
         *,
@@ -102,7 +102,7 @@ class Point(CStruct):
 
 assert Point.c_size() == 2
 assert Point.c_align() == 1
-assert Point.c_build(bytes([1, 2])) == Point(1, 2)
+assert Point.c_decode(bytes([1, 2])) == Point(1, 2)
 ```
 
 ---
@@ -139,7 +139,7 @@ class Rectangle(CStruct):
 
 assert Rectangle.c_size() == 4
 assert Rectangle.c_align() == 2
-assert Rectangle.c_build(bytes([1, 0, 2, 3])) == Rectangle(1, Dimensions(2, 3))
+assert Rectangle.c_decode(bytes([1, 0, 2, 3])) == Rectangle(1, Dimensions(2, 3))
 ```
 
 ---
@@ -155,7 +155,7 @@ class Message(CStruct):
 
 
 raw = bytes([5, 0]) + b"Helo\x00"
-assert Message.c_build(raw) == Message(5, "Helo")
+assert Message.c_decode(raw) == Message(5, "Helo")
 ```
 
 ---
@@ -176,7 +176,7 @@ class Person(CStruct):
 
 
 raw = bytes([18, 0, 1, 0])
-assert Person.c_build(raw) == Person(18, Mood.SAD)
+assert Person.c_decode(raw) == Person(18, Mood.SAD)
 ```
 
 ---
@@ -197,7 +197,7 @@ class ItemList(CStruct):
 
 
 data = bytes(range(1, 13))  # 3 items × 4 bytes each
-parsed = ItemList.c_build(data)
+parsed = ItemList.c_decode(data)
 
 assert parsed == ItemList([
     Item(1, 2, 3),
@@ -227,7 +227,7 @@ class UnixTimestamp(BaseType[datetime]):
     def c_signed(self) -> bool:
         return False
 
-    def c_build(self, raw: bytes, *, byteorder="little", signed=False) -> datetime:
+    def c_decode(self, raw: bytes, *, byteorder="little", signed=False) -> datetime:
         ts = int.from_bytes(raw, byteorder=byteorder, signed=signed)
         return datetime.utcfromtimestamp(ts)
     
@@ -238,7 +238,7 @@ class UnixTimestamp(BaseType[datetime]):
         level: Annotated[int, CType.U8]
 
 
-    parsed = LogEntry.c_build(bytes([255, 0, 0, 0, 3, 0, 0, 0]))
+    parsed = LogEntry.c_decode(bytes([255, 0, 0, 0, 3, 0, 0, 0]))
     assert parsed == LogEntry(datetime.fromtimestamp(255), 3)
 ```
 

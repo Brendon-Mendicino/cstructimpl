@@ -52,7 +52,7 @@ def _is_autocast(f: Field) -> Autocast | None:
 
 
 def _get_ctype_decode_type(ctype: BaseType[T]) -> type[T]:
-    ret_type = inspect.signature(ctype.c_build).return_annotation
+    ret_type = inspect.signature(ctype.c_decode).return_annotation
     ret_type = _get_origin(ret_type)
     return ret_type
 
@@ -141,7 +141,7 @@ class _StructTypeHandler(BaseType[T]):
     def c_signed(self) -> bool:
         raise NotImplementedError()
 
-    def c_build(
+    def c_decode(
         self,
         raw: bytes,
         *,
@@ -159,7 +159,7 @@ class _StructTypeHandler(BaseType[T]):
             if isinstance(pipe_item, _MarkerPadding):
                 continue
 
-            cls_item = pipe_item.c_build(
+            cls_item = pipe_item.c_decode(
                 raw_bytes,
                 is_little_endian=is_little_endian,
                 signed=signed,
@@ -209,7 +209,7 @@ class _UnionTypeHandler(BaseType[T]):
     def c_signed(self) -> bool:
         raise NotImplementedError()
 
-    def c_build(
+    def c_decode(
         self,
         raw: bytes,
         *,
@@ -223,7 +223,7 @@ class _UnionTypeHandler(BaseType[T]):
         for pipe_item in self.pipeline.pipeline:
             raw_bytes = islice(raw, pipe_item.c_size())
 
-            cls_item = pipe_item.c_build(
+            cls_item = pipe_item.c_decode(
                 bytes(raw_bytes),
                 is_little_endian=is_little_endian,
                 signed=signed,
@@ -353,7 +353,7 @@ class CStruct:
         if sys.version_info >= (3, 12):
             attrs = BaseType.__protocol_attrs__
         else:
-            attrs = {"c_size", "c_align", "c_signed", "c_build", "c_encode"}
+            attrs = {"c_size", "c_align", "c_signed", "c_decode", "c_encode"}
 
         for attr in attrs:
             if attr == "c_encode":
@@ -371,7 +371,7 @@ class CStruct:
     def c_signed(cls) -> bool: ...
 
     @classmethod
-    def c_build(
+    def c_decode(
         cls,
         raw: bytes,
         *,

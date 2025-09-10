@@ -33,7 +33,7 @@ class Person(CStruct):
     name: Annotated[str, CStr(6)]
 
 
-person = Person.c_build(bytes([18, 170]) + b"Pippo\x00")
+person = Person.c_decode(bytes([18, 170]) + b"Pippo\x00")
 print(person)  # Person(info=Info(age=18, height=170), name='Pippo')
 ```
 
@@ -59,13 +59,21 @@ class BaseType(Protocol[T]):
     def c_align(self) -> int: ...
     def c_signed(self) -> bool: ...
 
-    def c_build(
+    def c_decode(
         self,
         raw: bytes,
         *,
-        byteorder: Literal["little", "big"] = "little",
+        is_little_endian: bool = True,
         signed: bool | None = None,
     ) -> T | None: ...
+
+    def c_encode(
+        self,
+        data: T,
+        *,
+        is_little_endian: bool = True,
+        signed: bool | None = None,
+    ) -> bytes: ...
 ```
 
 Any class that follows this protocol can act as a `BaseType`, controlling its own parsing, size, and alignment.
@@ -83,7 +91,7 @@ The library comes with a set of ready-to-use type definitions that cover the maj
 
 Here are a few practical examples showing how `cstructimpl` works in real-world scenarios.
 
-### Basic Struct
+### Basic Deserialization
 
 Define a simple struct with two fields:
 
@@ -95,7 +103,22 @@ class Point(CStruct):
 
 assert Point.c_size() == 2
 assert Point.c_align() == 1
-assert Point.c_build(bytes([1, 2])) == Point(1, 2)
+assert Point.c_decode(bytes([1, 2])) == Point(1, 2)
+```
+
+---
+
+### Serializing a Class
+
+Create a class instance and serlialize it to raw bytes
+
+```python
+class Rect(CStruct):
+    width: Annotated[int, CType.U8]
+    height: Annotated[int, CType.U8] = 10
+
+rect = Rect(2)
+assert rect.c_encode() == bytes([2, 10])
 ```
 
 ---
@@ -117,7 +140,7 @@ class Rectangle(CStruct):
 
 assert Rectangle.c_size() == 4
 assert Rectangle.c_align() == 2
-assert Rectangle.c_build(bytes([1, 0, 2, 3])) == Rectangle(1, Dimensions(2, 3))
+assert Rectangle.c_decode(bytes([1, 0, 2, 3])) == Rectangle(1, Dimensions(2, 3))
 ```
 
 ---
@@ -133,7 +156,7 @@ class Message(CStruct):
 
 
 raw = bytes([5, 0]) + b"Helo\x00"
-assert Message.c_build(raw) == Message(5, "Helo")
+assert Message.c_decode(raw) == Message(5, "Helo")
 ```
 
 ---
@@ -154,7 +177,7 @@ class Person(CStruct):
 
 
 raw = bytes([18, 0, 1, 0])
-assert Person.c_build(raw) == Person(18, Mood.SAD)
+assert Person.c_decode(raw) == Person(18, Mood.SAD)
 ```
 
 ---
@@ -175,13 +198,49 @@ class ItemList(CStruct):
 
 
 data = bytes(range(1, 13))  # 3 items × 4 bytes each
-parsed = ItemList.c_build(data)
+parsed = ItemList.c_decode(data)
 
 assert parsed == ItemList([
     Item(1, 2, 3),
     Item(5, 6, 7),
     Item(9, 10, 11),
 ])
+```
+
+### Custom BaseType
+
+> > Hey! Is there a type that serializes an hash-map of list of structs of ...?
+>
+> > Yeah, sure there is! You can do it yourself!
+
+`cstructimpl` lets you define your own `BaseType` implementations to handle any kind of data that  is not present among the built-in primitives.
+
+For example, here's a custom type that interprets a raw integer as a **Unix timestamp**, returning a Python `datetime` object:
+
+```python
+class UnixTimestamp(BaseType[datetime]):
+    def c_size(self) -> int:
+        return 4
+
+    def c_align(self) -> int:
+        return 4
+
+    def c_signed(self) -> bool:
+        return False
+
+    def c_decode(self, raw: bytes, *, byteorder="little", signed=False) -> datetime:
+        ts = int.from_bytes(raw, byteorder=byteorder, signed=signed)
+        return datetime.utcfromtimestamp(ts)
+
+
+    @dataclass
+    class LogEntry(CStruct):
+        timestamp: Annotated[datetime, UnixTimestamp()]
+        level: Annotated[int, CType.U8]
+
+
+    parsed = LogEntry.c_decode(bytes([255, 0, 0, 0, 3, 0, 0, 0]))
+    assert parsed == LogEntry(datetime.fromtimestamp(255), 3)
 ```
 
 ---
@@ -230,6 +289,7 @@ But much simpler and less error-prone.
 
 - Define Python classes that map directly to C `struct`s
 - Parse raw bytes into typed objects with a single method call
+- Serialize a class to raw bytes using built-in type system
 - Built-in type system for common C primitives
 - Support for nested structs
 - Flexible extension via the `BaseType` protocol

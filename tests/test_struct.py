@@ -14,7 +14,7 @@ def test_basic_decoding():
 
     assert Point.c_size() == 2
     assert Point.c_align() == 1
-    assert Point.c_build(bytes([1, 2])) == Point(1, 2)
+    assert Point.c_decode(bytes([1, 2])) == Point(1, 2)
 
 
 def test_basic_deconding_with_padding():
@@ -25,7 +25,7 @@ def test_basic_deconding_with_padding():
 
     assert Point.c_size() == 4
     assert Point.c_align() == 2
-    assert Point.c_build(bytes([1, 2, 3, 4])) == Point(1, 3 + (4 << 8))
+    assert Point.c_decode(bytes([1, 2, 3, 4])) == Point(1, 3 + (4 << 8))
 
 
 def test_basic_encoding():
@@ -66,7 +66,7 @@ def test_embedded_struct():
 
     assert Outer.c_size() == 4
     assert Outer.c_align() == 2
-    assert Outer.c_build(bytes([1, 0, 2, 3])) == Outer(1, Inner(2, 3))
+    assert Outer.c_decode(bytes([1, 0, 2, 3])) == Outer(1, Inner(2, 3))
 
 
 def test_struct_with_string():
@@ -74,7 +74,7 @@ def test_struct_with_string():
         size: Annotated[int, CType.U16]
         string: Annotated[str, CStr(5)]
 
-    assert SWithStr.c_build(bytes([5, 0]) + b"Helo\x00") == SWithStr(5, "Helo")
+    assert SWithStr.c_decode(bytes([5, 0]) + b"Helo\x00") == SWithStr(5, "Helo")
 
 
 def test_autocast_with_enums():
@@ -86,7 +86,7 @@ def test_autocast_with_enums():
         age: Annotated[int, CType.U16]
         person: Annotated[PersonType, CType.U8, Autocast()]
 
-    assert Person.c_build(bytes([18, 0, 1, 0])) == Person(18, PersonType.SAD)
+    assert Person.c_decode(bytes([18, 0, 1, 0])) == Person(18, PersonType.SAD)
 
 
 def test_struct_with_lists():
@@ -101,7 +101,7 @@ def test_struct_with_lists():
         list: Annotated[list[Inner], CArray(Inner, 3)]
 
     data = bytes(range(1, 13))  # 3 items × 4 bytes each
-    parsed = MyList.c_build(data)
+    parsed = MyList.c_decode(data)
 
     assert parsed == MyList(
         [
@@ -124,7 +124,7 @@ def test_custom_defined_base_type():
         def c_signed(self) -> bool:
             return False
 
-        def c_build(
+        def c_decode(
             self,
             raw: bytes,
             *,
@@ -144,5 +144,5 @@ def test_custom_defined_base_type():
         timestamp: Annotated[datetime, UnixTimestamp()]
         level: Annotated[int, CType.U8]
 
-    parsed = LogEntry.c_build(bytes([255, 0, 0, 0, 3, 0, 0, 0]))
+    parsed = LogEntry.c_decode(bytes([255, 0, 0, 0, 3, 0, 0, 0]))
     assert parsed == LogEntry(datetime.fromtimestamp(255), 3)

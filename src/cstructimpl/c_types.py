@@ -44,7 +44,7 @@ class BaseType(Protocol[T]):
 
     def c_signed(self) -> bool: ...
 
-    def c_build(
+    def c_decode(
         self,
         raw: bytes,
         *,
@@ -82,14 +82,14 @@ class GetType:
     def c_signed(self) -> bool:
         return self.has_ctype.c_get_type().c_signed()
 
-    def c_build(
+    def c_decode(
         self,
         raw: bytes,
         *,
         is_little_endian: bool = True,
         signed: bool | None = None,
     ):
-        return self.has_ctype.c_get_type().c_build(
+        return self.has_ctype.c_get_type().c_decode(
             raw, is_little_endian=is_little_endian, signed=signed
         )
 
@@ -157,7 +157,7 @@ class CType(Enum):
                     f"Should not be here! {self=} Type was not supported: the match was not exaustive."
                 )
 
-    def c_build(
+    def c_decode(
         self,
         raw: bytes,
         *,
@@ -205,7 +205,7 @@ class CArray(Generic[T], BaseType[list[T]]):
     def c_signed(self) -> bool:
         raise NotImplementedError()
 
-    def c_build(
+    def c_decode(
         self,
         raw: bytes,
         *,
@@ -222,7 +222,7 @@ class CArray(Generic[T], BaseType[list[T]]):
         return [
             cast(
                 T,
-                self.ctype.c_build(
+                self.ctype.c_decode(
                     bytes(cell_bytes), is_little_endian=is_little_endian
                 ),
             )
@@ -245,7 +245,7 @@ class CPadding(BaseType[None]):
     def c_signed(self) -> bool:
         raise NotImplementedError("This method should not be called!")
 
-    def c_build(
+    def c_decode(
         self,
         raw: bytes,
         *,
@@ -281,7 +281,7 @@ class CStr(BaseType[str]):
     def c_signed(self) -> bool:
         raise NotImplementedError("This method should not be called!")
 
-    def c_build(
+    def c_decode(
         self,
         raw: bytes,
         *,
@@ -338,11 +338,11 @@ class CMapper(Generic[T, U], BaseType[T]):
     def c_signed(self) -> bool:
         return self.ctype.c_signed()
 
-    def c_build(
+    def c_decode(
         self, raw: bytes, *, is_little_endian: bool = True, signed: bool | None = None
     ) -> T:
         return self.decoder(
-            self.ctype.c_build(
+            self.ctype.c_decode(
                 raw,
                 is_little_endian=is_little_endian,
                 signed=signed,
