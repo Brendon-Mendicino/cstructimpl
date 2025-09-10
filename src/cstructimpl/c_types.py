@@ -261,7 +261,7 @@ class CPadding(BaseType[None]):
     ) -> bytes:
         _ = data, is_little_endian, signed
 
-        return int(0).to_bytes(self.c_size())
+        return int(0).to_bytes(self.c_size(), byteorder="little", signed=False)
 
 
 @dataclass
