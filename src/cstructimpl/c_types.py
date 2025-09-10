@@ -5,7 +5,6 @@ from enum import Enum, auto
 from typing import (
     Callable,
     Generic,
-    Literal,
     Protocol,
     TypeVar,
     cast,
@@ -19,8 +18,9 @@ if sys.version_info >= (3, 12):
 else:
 
     def batched(iterable, n: int):
+        iterator = iter(iterable)
         while True:
-            batch = tuple(islice(iterable, n, None))
+            batch = tuple(islice(iterator, n))
             if len(batch) == 0:
                 break
 
