@@ -34,3 +34,5 @@ dev = ["pytest"]
 [project.urls]
 Repository = "https://github.com/Brendon-Mendicino/cstructimpl"
 Issues = "https://github.com/Brendon-Mendicino/cstructimpl/issues"
+Documentation = "https://github.com/Brendon-Mendicino/cstructimpl/blob/master/README.md"
+Changelog = "https://github.com/Brendon-Mendicino/cstructimpl/releases/latest"

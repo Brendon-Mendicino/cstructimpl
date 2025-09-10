@@ -232,6 +232,8 @@ class UnixTimestamp(BaseType[datetime]):
         ts = int.from_bytes(raw, byteorder=byteorder, signed=signed)
         return datetime.utcfromtimestamp(ts)
 
+    def c_encode(self): pass
+
 
     @dataclass
     class LogEntry(CStruct):

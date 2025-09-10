@@ -230,7 +230,9 @@ class UnixTimestamp(BaseType[datetime]):
     def c_decode(self, raw: bytes, *, byteorder="little", signed=False) -> datetime:
         ts = int.from_bytes(raw, byteorder=byteorder, signed=signed)
         return datetime.utcfromtimestamp(ts)
-    
+
+    def c_encode(self): pass
+
 
     @dataclass
     class LogEntry(CStruct):
