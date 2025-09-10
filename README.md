@@ -62,9 +62,17 @@ class BaseType(Protocol[T]):
         self,
         raw: bytes,
         *,
-        byteorder: Literal["little", "big"] = "little",
+        is_little_endian: bool = True,
         signed: bool | None = None,
     ) -> T | None: ...
+
+    def c_encode(
+        self,
+        data: T,
+        *,
+        is_little_endian: bool = True,
+        signed: bool | None = None,
+    ) -> bytes: ...
 ```
 
 Any class that follows this protocol can act as a `BaseType`, controlling its own parsing, size, and alignment.
@@ -82,7 +90,7 @@ The library comes with a set of ready-to-use type definitions that cover the maj
 
 Here are a few practical examples showing how `cstructimpl` works in real-world scenarios.
 
-### Basic Struct
+### Basic Deserialization
 
 Define a simple struct with two fields:
 
@@ -95,6 +103,21 @@ class Point(CStruct):
 assert Point.c_size() == 2
 assert Point.c_align() == 1
 assert Point.c_build(bytes([1, 2])) == Point(1, 2)
+```
+
+---
+
+### Serializing a Class
+
+Create a class instance and serlialize it to raw bytes
+
+```python
+class Rect(CStruct):
+    width: Annotated[int, CType.U8]
+    height: Annotated[int, CType.U8] = 10
+
+rect = Rect(2)
+assert rect.c_encode() == bytes([2, 10])
 ```
 
 ---
@@ -185,9 +208,9 @@ assert parsed == ItemList([
 
 ### Custom BaseType
 
-> > Hey! Is there a type that serializes an HashMap of list of structs of ...?
+> > Hey! Is there a type that serializes an hash-map of list of structs of ...?
 > 
-> > Yeah! Sure there is! You can do it yourself!
+> > Yeah, sure there is! You can do it yourself!
 
 `cstructimpl` lets you define your own `BaseType` implementations to handle any kind of data that  is not present among the built-in primitives.
 
@@ -195,14 +218,11 @@ For example, here's a custom type that interprets a raw integer as a **Unix time
 
 ```python
 class UnixTimestamp(BaseType[datetime]):
-    def __init__(self, bits: int = 32):
-        self.bits = bits
-
     def c_size(self) -> int:
-        return self.bits // 8
+        return 4
 
     def c_align(self) -> int:
-        return self.c_size()
+        return 4
 
     def c_signed(self) -> bool:
         return False
@@ -256,7 +276,7 @@ class ResultType(Enum):
 
 
 class Person(CStruct):
-    kind: Annotated[ResultType, CBuilder(CType.U8, lambda u8: ResultType(u8))]
+    kind: Annotated[ResultType, CMapper(CType.U8, lambda u8: ResultType(u8))]
     error_code: Annotated[int, CType.I32]
 ```
 
@@ -268,6 +288,7 @@ But much simpler and less error-prone.
 
 - Define Python classes that map directly to C `struct`s
 - Parse raw bytes into typed objects with a single method call
+- Serialize a class to raw bytes using built-in type system
 - Built-in type system for common C primitives
 - Support for nested structs
 - Flexible extension via the `BaseType` protocol

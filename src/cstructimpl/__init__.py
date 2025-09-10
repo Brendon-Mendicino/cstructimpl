@@ -218,7 +218,7 @@ class ResultType(Enum):
 
 
 class Person(CStruct):
-    kind: Annotated[ResultType, CBuilder(CType.U8, lambda u8: ResultType(u8))]
+    kind: Annotated[ResultType, CMapper(CType.U8, lambda u8: ResultType(u8))]
     error_code: Annotated[int, CType.I32]
 ```
 
@@ -267,8 +267,9 @@ This project is licensed under the terms of the [Apache-2.0 License](https://git
 
 from . import c_lib
 from . import c_types
+from . import c_annotations
 
-from .c_types import BaseType, HasBaseType, CType, CArray, CPadding, CStr, CBuilder
+from .c_types import BaseType, HasBaseType, CType, CArray, CPadding, CStr, CMapper
 from .c_lib import c_struct, CStruct
 from .c_annotations import Autocast
 
@@ -276,13 +277,14 @@ from .c_annotations import Autocast
 __all__ = [
     "c_lib",
     "c_types",
+    "c_annotations",
     "BaseType",
     "HasBaseType",
     "CType",
     "CArray",
     "CPadding",
     "CStr",
-    "CBuilder",
+    "CMapper",
     "c_struct",
     "CStruct",
     "Autocast",

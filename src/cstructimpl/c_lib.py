@@ -1,13 +1,20 @@
 """Decorators and classes to extend types."""
 
+import inspect
 import sys
 
-from dataclasses import Field, dataclass, fields, is_dataclass
+from dataclasses import Field, astuple, dataclass, fields, is_dataclass
 from itertools import islice
-from typing import Callable, Generic, Literal, TypeVar, get_origin
+from typing import (
+    Callable,
+    ParamSpec,
+    TypeVar,
+    get_origin,
+)
 
+from .util import hybridmethod
 from .c_annotations import Autocast
-from .c_types import BaseType, CBuilder, HasBaseType, CPadding
+from .c_types import BaseType, CMapper, HasBaseType, CPadding
 
 if sys.version_info >= (3, 11):
     from typing import Self
@@ -15,6 +22,10 @@ else:
     Self = object
 
 T = TypeVar("T")
+
+
+class _MarkerPadding(CPadding):
+    pass
 
 
 def _get_origin(t: type) -> type:
@@ -34,10 +45,16 @@ def _get_field_metadata(f: Field) -> tuple | None:
     return _get_metadata(f.type)
 
 
-def _is_autocast(f: Field) -> bool:
+def _is_autocast(f: Field) -> Autocast | None:
     autocast = _get_field_metadata(f) or tuple()
-    autocast = map(lambda f: isinstance(f, Autocast), autocast)
-    return any(autocast)
+    autocast = filter(lambda f: isinstance(f, Autocast), autocast)
+    return next(autocast, None)
+
+
+def _get_ctype_decode_type(ctype: BaseType[T]) -> type[T]:
+    ret_type = inspect.signature(ctype.c_build).return_annotation
+    ret_type = _get_origin(ret_type)
+    return ret_type
 
 
 def _get_ctype(t: Field) -> BaseType | None:
@@ -75,14 +92,15 @@ def _types_from_dataclass(cls: type) -> list[BaseType]:
             )
 
         if autocast:
-            field_type = _get_field_origin(field)
+            cls_field_type = _get_field_origin(field)
+            ret_type = _get_ctype_decode_type(ctype)
 
-            if not isinstance(field_type, type):
+            if not isinstance(cls_field_type, type):
                 raise ValueError(
-                    f"Autocast is set to True, but the dataclass field is not an instance of `type`! Cannot cast serialized object to the field type. Either disable autocast or change type signature. {field_type=}"
+                    f"Autocast is set to True, but the dataclass field is not an instance of `type`! Cannot cast serialized object to the field type. Either disable autocast or change type signature. {cls_field_type=}"
                 )
 
-            ctype = CBuilder(ctype, field_type)
+            ctype = CMapper(ctype, cls_field_type, ret_type)
 
         ctypes.append(ctype)
 
@@ -107,7 +125,7 @@ class _Pipeline:
 
 
 @dataclass
-class _StructTypeHandler(Generic[T]):
+class _StructTypeHandler(BaseType[T]):
     """StructTypeHandler"""
 
     pipeline: _Pipeline
@@ -127,7 +145,7 @@ class _StructTypeHandler(Generic[T]):
         self,
         raw: bytes,
         *,
-        byteorder: Literal["little", "big"] = "little",
+        is_little_endian: bool = True,
         signed: bool | None = None,
     ) -> T:
         # TODO: handle byteorder, signed, size, align
@@ -136,25 +154,46 @@ class _StructTypeHandler(Generic[T]):
         cls_items = []
 
         for pipe_item in self.pipeline.pipeline:
-            raw_bytes = islice(raw_slice, pipe_item.c_size())
+            raw_bytes = bytes(islice(raw_slice, pipe_item.c_size()))
+
+            if isinstance(pipe_item, _MarkerPadding):
+                continue
 
             cls_item = pipe_item.c_build(
-                bytes(raw_bytes),
-                byteorder=byteorder,
+                raw_bytes,
+                is_little_endian=is_little_endian,
                 signed=signed,
             )
 
-            if cls_item is not None:
-                cls_items.append(cls_item)
+            cls_items.append(cls_item)
 
         if self.strict:
             _strict_dataclass_fields_check(self.cls, cls_items)
 
         return self.cls(*cls_items)
 
+    def c_encode(
+        self, data: T, *, is_little_endian: bool = True, signed: bool | None = None
+    ) -> bytes:
+        raw_data = bytes()
+        data_fields = iter(astuple(data))
+
+        for pipe_item in self.pipeline.pipeline:
+            if isinstance(pipe_item, _MarkerPadding):
+                raw_data += pipe_item.c_encode(
+                    None, is_little_endian=is_little_endian, signed=signed
+                )
+                continue
+
+            raw_data += pipe_item.c_encode(
+                next(data_fields), is_little_endian=is_little_endian, signed=signed
+            )
+
+        return raw_data
+
 
 @dataclass
-class _UnionTypeHandler(Generic[T]):
+class _UnionTypeHandler(BaseType[T]):
     """StructTypeHandler"""
 
     pipeline: _Pipeline
@@ -174,7 +213,7 @@ class _UnionTypeHandler(Generic[T]):
         self,
         raw: bytes,
         *,
-        byteorder: Literal["little", "big"] = "little",
+        is_little_endian: bool = True,
         signed: bool | None = None,
     ) -> T:
         # TODO: handle byteorder, signed, size, align
@@ -186,7 +225,7 @@ class _UnionTypeHandler(Generic[T]):
 
             cls_item = pipe_item.c_build(
                 bytes(raw_bytes),
-                byteorder=byteorder,
+                is_little_endian=is_little_endian,
                 signed=signed,
             )
 
@@ -198,6 +237,11 @@ class _UnionTypeHandler(Generic[T]):
 
         # TODO: make union fields lazyly evalutated
         return self.cls(*cls_items)
+
+    def c_encode(
+        self, data: T, *, is_little_endian: bool = True, signed: bool | None = None
+    ) -> bytes:
+        pass
 
 
 def _build_struct_pipeline(
@@ -211,7 +255,7 @@ def _build_struct_pipeline(
         padding = -current_size % ctype.c_align()
 
         if padding != 0:
-            pipeline.append(CPadding(padding))
+            pipeline.append(_MarkerPadding(padding))
 
         current_align = max(current_align, ctype.c_align())
         current_size += ctype.c_size()
@@ -309,10 +353,13 @@ class CStruct:
         if sys.version_info >= (3, 12):
             attrs = BaseType.__protocol_attrs__
         else:
-            attrs = {"c_size", "c_align", "c_signed", "c_build"}
+            attrs = {"c_size", "c_align", "c_signed", "c_build", "c_encode"}
 
         for attr in attrs:
-            setattr(cls, attr, getattr(base_type, attr))
+            if attr == "c_encode":
+                setattr(cls, "_c_encode", getattr(base_type, attr))
+            else:
+                setattr(cls, attr, getattr(base_type, attr))
 
     @classmethod
     def c_size(cls) -> int: ...
@@ -328,6 +375,22 @@ class CStruct:
         cls,
         raw: bytes,
         *,
-        byteorder: Literal["little", "big"] = "little",
+        is_little_endian: bool = True,
         signed: bool | None = None,
     ) -> Self: ...
+
+    @hybridmethod
+    def c_encode(
+        self,
+        data: Self | None = None,
+        *,
+        is_little_endian: bool = True,
+        signed: bool | None = None,
+    ) -> bytes:
+        if data is None and not isinstance(self, type):
+            data = self
+
+        if data is None:
+            raise ValueError("Data is None!")
+
+        return self._c_encode(data, is_little_endian=is_little_endian, signed=signed)

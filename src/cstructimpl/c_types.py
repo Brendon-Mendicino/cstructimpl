@@ -2,7 +2,15 @@ import sys
 
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Callable, Generic, Literal, Protocol, TypeVar, cast, runtime_checkable
+from typing import (
+    Callable,
+    Generic,
+    Literal,
+    Protocol,
+    TypeVar,
+    cast,
+    runtime_checkable,
+)
 from itertools import islice
 
 if sys.version_info >= (3, 12):
@@ -22,12 +30,11 @@ else:
 
 
 T = TypeVar("T")
-T_co = TypeVar("T_co", covariant=True)
 U = TypeVar("U")
 
 
 @runtime_checkable
-class BaseType(Protocol[T_co]):
+class BaseType(Protocol[T]):
     """Protocol specification to parse a raw bytes into a
     structure."""
 
@@ -41,9 +48,17 @@ class BaseType(Protocol[T_co]):
         self,
         raw: bytes,
         *,
-        byteorder: Literal["little", "big"] = "little",
+        is_little_endian: bool = True,
         signed: bool | None = None,
-    ) -> T_co | None: ...
+    ) -> T | None: ...
+
+    def c_encode(
+        self,
+        data: T,
+        *,
+        is_little_endian: bool = True,
+        signed: bool | None = None,
+    ) -> bytes: ...
 
 
 @runtime_checkable
@@ -71,11 +86,22 @@ class GetType:
         self,
         raw: bytes,
         *,
-        byteorder: Literal["little", "big"] = "little",
+        is_little_endian: bool = True,
         signed: bool | None = None,
     ):
         return self.has_ctype.c_get_type().c_build(
-            raw, byteorder=byteorder, signed=signed
+            raw, is_little_endian=is_little_endian, signed=signed
+        )
+
+    def c_encode(
+        self,
+        data: HasBaseType,
+        *,
+        is_little_endian: bool = True,
+        signed: bool | None = None,
+    ) -> bytes:
+        return self.has_ctype.c_get_type().c_encode(
+            data, is_little_endian=is_little_endian, signed=signed
         )
 
 
@@ -135,7 +161,7 @@ class CType(Enum):
         self,
         raw: bytes,
         *,
-        byteorder: Literal["little", "big"] = "little",
+        is_little_endian: bool = True,
         signed: bool | None = None,
     ) -> int:
         if signed is None:
@@ -146,11 +172,25 @@ class CType(Enum):
                 f"The raw bytes did not have the same lenght of the type! {self=} {len(raw)=}"
             )
 
-        return int.from_bytes(raw, byteorder=byteorder, signed=signed)
+        return int.from_bytes(
+            raw, byteorder="little" if is_little_endian else "big", signed=signed
+        )
+
+    def c_encode(
+        self, data: int, *, is_little_endian: bool = True, signed: bool | None = None
+    ) -> bytes:
+        if signed is None:
+            signed = self.c_signed()
+
+        return data.to_bytes(
+            length=self.c_size(),
+            byteorder="little" if is_little_endian else "big",
+            signed=signed,
+        )
 
 
 @dataclass
-class CArray(Generic[T]):
+class CArray(Generic[T], BaseType[list[T]]):
     """Represents a generic sized array."""
 
     ctype: BaseType[T]
@@ -169,7 +209,7 @@ class CArray(Generic[T]):
         self,
         raw: bytes,
         *,
-        byteorder: Literal["little", "big"] = "little",
+        is_little_endian: bool = True,
         signed: bool | None = None,
     ) -> list[T]:
         _ = signed
@@ -180,13 +220,18 @@ class CArray(Generic[T]):
             )
 
         return [
-            cast(T, self.ctype.c_build(bytes(cell_bytes), byteorder=byteorder))
+            cast(
+                T,
+                self.ctype.c_build(
+                    bytes(cell_bytes), is_little_endian=is_little_endian
+                ),
+            )
             for cell_bytes in batched(raw, self.ctype.c_size())
         ]
 
 
 @dataclass
-class CPadding:
+class CPadding(BaseType[None]):
     """Represent padding bytes between the actual values."""
 
     padding: int
@@ -204,16 +249,23 @@ class CPadding:
         self,
         raw: bytes,
         *,
-        byteorder: Literal["little", "big"] = "little",
+        is_little_endian: bool = True,
         signed: bool | None = None,
     ) -> None:
-        _ = raw, byteorder, signed
+        _ = raw, is_little_endian, signed
 
         return None
 
+    def c_encode(
+        self, data: None, *, is_little_endian: bool = True, signed: bool | None = None
+    ) -> bytes:
+        _ = data, is_little_endian, signed
+
+        return int(0).to_bytes(self.c_size())
+
 
 @dataclass
-class CStr:
+class CStr(BaseType[str]):
     """Represents C string with a null-termination character."""
 
     array_size: int
@@ -233,10 +285,10 @@ class CStr:
         self,
         raw: bytes,
         *,
-        byteorder: Literal["little", "big"] = "little",
+        is_little_endian: bool = True,
         signed: bool | None = None,
     ) -> str:
-        _ = byteorder, signed
+        _ = is_little_endian, signed
 
         if len(raw) != self.array_size:
             raise ValueError(
@@ -252,13 +304,30 @@ class CStr:
 
         return bytes(islice(raw, null_index)).decode(self.encoding)
 
+    def c_encode(
+        self, data: str, *, is_little_endian: bool = True, signed: bool | None = None
+    ) -> bytes:
+        _ = is_little_endian, signed
+
+        encoded = data.encode(encoding=self.encoding) + b"\x00"
+        # Fill the ramining bytes with zero values
+        encoded += b"\x00" * (self.c_size() - len(encoded))
+
+        if len(encoded) != self.c_size():
+            raise ValueError(
+                f"Failed to encode a str! The lenght of the string is greater than the actual size it can hold! (Remember a CStr must be null-terminated) {len(encoded)=} {self.c_size()=}"
+            )
+
+        return encoded
+
 
 @dataclass
-class CBuilder(Generic[T, U]):
+class CMapper(Generic[T, U], BaseType[T]):
     """Builds a generic object starting from a `BaseType`."""
 
     ctype: BaseType[U]
-    builder: Callable[[U | None], T]
+    decoder: Callable[[U | None], T]
+    encoder: Callable[[T], U]
 
     def c_size(self) -> int:
         return self.ctype.c_size()
@@ -270,16 +339,21 @@ class CBuilder(Generic[T, U]):
         return self.ctype.c_signed()
 
     def c_build(
-        self,
-        raw: bytes,
-        *,
-        byteorder: Literal["little", "big"] = "little",
-        signed: bool | None = None,
+        self, raw: bytes, *, is_little_endian: bool = True, signed: bool | None = None
     ) -> T:
-        return self.builder(
+        return self.decoder(
             self.ctype.c_build(
                 raw,
-                byteorder=byteorder,
+                is_little_endian=is_little_endian,
                 signed=signed,
             )
+        )
+
+    def c_encode(
+        self, data: T, *, is_little_endian: bool = True, signed: bool | None = None
+    ) -> bytes:
+        return self.ctype.c_encode(
+            self.encoder(data),
+            is_little_endian=is_little_endian,
+            signed=signed,
         )

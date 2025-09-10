@@ -6,14 +6,53 @@ from typing import Annotated, Literal
 from cstructimpl import *
 
 
-def test_basic_usage():
-    class TwoFields(CStruct):
-        a: Annotated[int, CType.U8]
-        b: Annotated[int, CType.U8]
+def test_basic_decoding():
+    @dataclass
+    class Point(CStruct):
+        x: Annotated[int, CType.U8]
+        y: Annotated[int, CType.U8]
 
-    assert TwoFields.c_size() == 2
-    assert TwoFields.c_align() == 1
-    assert TwoFields.c_build(bytes([1, 2])) == TwoFields(1, 2)
+    assert Point.c_size() == 2
+    assert Point.c_align() == 1
+    assert Point.c_build(bytes([1, 2])) == Point(1, 2)
+
+
+def test_basic_deconding_with_padding():
+    @dataclass
+    class Point(CStruct):
+        x: Annotated[int, CType.U8]
+        y: Annotated[int, CType.U16]
+
+    assert Point.c_size() == 4
+    assert Point.c_align() == 2
+    assert Point.c_build(bytes([1, 2, 3, 4])) == Point(1, 3 + (4 << 8))
+
+
+def test_basic_encoding():
+    @dataclass
+    class Point(CStruct):
+        x: Annotated[int, CType.U8]
+        y: Annotated[int, CType.U8]
+
+    assert Point(1, 2).c_encode() == bytes([1, 2])
+
+
+def test_encoding_with_padding():
+    @dataclass
+    class Point(CStruct):
+        x: Annotated[int, CType.U8]
+        y: Annotated[int, CType.U16]
+
+    assert Point(1, (255 << 8) + 2).c_encode() == bytes([1, 0, 2, 255])
+
+
+def test_encoding_with_default_value():
+    @dataclass
+    class Point(CStruct):
+        x: Annotated[int, CType.U8]
+        y: Annotated[int, CType.U8] = 2
+
+    assert Point(1).c_encode() == bytes([1, 2])
 
 
 def test_embedded_struct():
@@ -72,6 +111,7 @@ def test_struct_with_lists():
         ]
     )
 
+
 def test_custom_defined_base_type():
     @dataclass
     class UnixTimestamp:
@@ -84,9 +124,20 @@ def test_custom_defined_base_type():
         def c_signed(self) -> bool:
             return False
 
-        def c_build(self, raw: bytes, *, byteorder:Literal["little", "big"]="little", signed=False,) -> datetime:
-            ts = int.from_bytes(raw, byteorder=byteorder, signed=signed)
+        def c_build(
+            self,
+            raw: bytes,
+            *,
+            is_little_endian: bool = True,
+            signed=False,
+        ) -> datetime:
+            ts = int.from_bytes(
+                raw, byteorder="little" if is_little_endian else "big", signed=signed
+            )
             return datetime.fromtimestamp(ts)
+
+        def c_encode(self):
+            pass
 
     @dataclass
     class LogEntry(CStruct):
@@ -95,4 +146,3 @@ def test_custom_defined_base_type():
 
     parsed = LogEntry.c_build(bytes([255, 0, 0, 0, 3, 0, 0, 0]))
     assert parsed == LogEntry(datetime.fromtimestamp(255), 3)
-        
