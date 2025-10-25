@@ -7,6 +7,16 @@ R_co = TypeVar("R_co", covariant=True)
 
 
 class hybridmethod(Generic[T, P, R_co]):
+    # """Like `@classmethod` but if called on the instance of a class,
+    # the reference to the object is passed to the first
+    # parameter of the method instead of the class instance.
+    
+    # # Example
+    
+    # >>> class 
+    
+    # """
+
     def __init__(self, f: Callable[Concatenate[type[T] | T, P], R_co], /) -> None:
         self.f = f
 

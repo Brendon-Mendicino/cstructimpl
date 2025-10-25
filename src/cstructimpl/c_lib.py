@@ -3,18 +3,17 @@
 import inspect
 import sys
 
-from dataclasses import Field, astuple, dataclass, fields, is_dataclass
+from dataclasses import Field, dataclass, fields, is_dataclass
 from itertools import islice
 from typing import (
     Callable,
-    ParamSpec,
     TypeVar,
     get_origin,
 )
 
 from .util import hybridmethod
 from .c_annotations import Autocast
-from .c_types import BaseType, CMapper, HasBaseType, CPadding
+from .c_types import BaseType, CBool, CMapper, HasBaseType, CPadding, CType, CFloat
 
 if sys.version_info >= (3, 11):
     from typing import Self
@@ -22,6 +21,13 @@ else:
     Self = object
 
 T = TypeVar("T")
+
+
+DEFAULT_TYPE_TO_BASETYPE = {
+    bool: CBool(),
+    int: CType.I32,
+    float: CFloat.F32,
+}
 
 
 class _MarkerPadding(CPadding):
@@ -57,7 +63,13 @@ def _get_ctype_decode_type(ctype: BaseType[T]) -> type[T]:
     return ret_type
 
 
-def _get_ctype(t: Field) -> BaseType | None:
+def _get_default_basetype(t: type) -> BaseType | None:
+    return DEFAULT_TYPE_TO_BASETYPE.get(t, None)
+
+
+def _get_basetype(t: Field) -> BaseType | None:
+    """Get the `BaseType` of a `Field`."""
+
     origin = _get_field_origin(t)
     metadata = _get_field_metadata(t) or tuple()
 
@@ -76,7 +88,9 @@ def _get_ctype(t: Field) -> BaseType | None:
     if isinstance(origin, HasBaseType):
         return origin.c_get_type()
 
-    return None
+    # If no metadata is provided try and check if the current
+    # type has a default `BaseType`
+    return _get_default_basetype(origin)
 
 
 def _types_from_dataclass(cls: type) -> list[BaseType]:
@@ -84,7 +98,7 @@ def _types_from_dataclass(cls: type) -> list[BaseType]:
 
     for field in fields(cls):
         autocast = _is_autocast(field)
-        ctype = _get_ctype(field)
+        ctype = _get_basetype(field)
 
         if ctype is None:
             raise ValueError(
@@ -176,7 +190,7 @@ class _StructTypeHandler(BaseType[T]):
         self, data: T, *, is_little_endian: bool = True, signed: bool | None = None
     ) -> bytes:
         raw_data = bytes()
-        data_fields = iter(astuple(data))
+        data_fields = (getattr(data, f.name) for f in fields(data))
 
         for pipe_item in self.pipeline.pipeline:
             if isinstance(pipe_item, _MarkerPadding):
@@ -256,13 +270,20 @@ def _build_struct_pipeline(
 
         if padding != 0:
             pipeline.append(_MarkerPadding(padding))
+            current_size += padding
 
         current_align = max(current_align, ctype.c_align())
         current_size += ctype.c_size()
         pipeline.append(ctype)
 
+    # Override struct global padding
     if override_align is not None:
         current_align = override_align
+
+    # Add trailing padding if needed
+    padding = -current_size % current_align
+    if padding != 0:
+        pipeline.append(_MarkerPadding(padding))
 
     # A struct always needs to always have a size which is a mutiple of its
     # alignemt
@@ -330,6 +351,35 @@ def c_struct(
     union: bool = False,
     strict: bool = True,
 ) -> Callable[[type[T]], type[T]]:
+    """Decorator used to automatically implement the `BaseType`
+    methods in a class. Every class that is annotated with
+    this decorator, automatically becomes a `BaseType` itself.
+
+    This decorator converts the class in a `dataclass` it isn't already,
+    this is done in order to exploit the dataclasses utility
+    methods for the fields of the class.
+
+    Args:
+        align (int | None, optional): struct alignment. Defaults to None.
+        union (bool, optional): if true the fields of a struct are
+            interpreted as a C union. Defaults to False.
+        strict (bool, optional): check that the converted value in
+            a parameter matches the actual type defined in the class. Defaults to True.
+
+    Returns:
+        _ (Callable[[type[T]], type[T]]): returns the augmented class
+
+    Examples:
+
+    >>> @c_struct()
+    ... class Point:
+    ...     x: int
+    ...     y: int
+    >>> point_ctype = Point.c_get_type()
+    >>> p = point_ctype.c_decode(bytes([1, 0, 0, 0, 2, 0, 0, 0]))
+    >>> assert p == Point(1, 2)
+    """
+
     def c_struct_inner(cls: type[T]):
         if not union:
             return _c_struct(cls, align, strict)
@@ -341,9 +391,20 @@ def c_struct(
 
 class CStruct:
     """Overrides the attributes of a class, directly embedding the
-    method for a BaseType iside the type definition.
+    method for a `BaseType` iside the type definition.
 
-    This is a simple wrapper over the `c_struct` decorator."""
+    This is a simple wrapper over the `c_struct` decorator.
+
+    Args:
+
+    Examples:
+
+    >>> class Point(CStruct):
+    ...     x: int
+    ...     y: int
+    >>> p = Point.c_decode(bytes([1, 0, 0, 0, 2, 0, 0, 0]))
+    >>> assert p == Point(1, 2)
+    """
 
     def __init_subclass__(cls, **kwargs):
         new_cls = c_struct(**kwargs)(cls)
@@ -379,6 +440,7 @@ class CStruct:
         signed: bool | None = None,
     ) -> Self: ...
 
+    # TODO: decide if this method should be split into two separate ones, one left as the signature of `BaseType` and another one that class this with data=self
     @hybridmethod
     def c_encode(
         self,
@@ -394,3 +456,6 @@ class CStruct:
             raise ValueError("Data is None!")
 
         return self._c_encode(data, is_little_endian=is_little_endian, signed=signed)
+
+    @classmethod
+    def c_get_type(cls) -> BaseType[Self]: ...

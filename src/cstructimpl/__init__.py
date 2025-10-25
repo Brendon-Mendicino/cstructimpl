@@ -9,7 +9,7 @@
 
 ---
 
-## ⚡ Quick Start
+## Quick Start
 
 Install from PyPI:
 
@@ -39,7 +39,7 @@ print(person)  # Person(info=Info(age=18, height=170), name='Pippo')
 
 ---
 
-## 🚀 Introduction
+## Introduction
 
 `cstructimpl` makes working with binary data in Python simple and intuitive.
 By subclassing `CStruct`, you can define Python classes that map directly to C-style `struct`s and parse raw bytes into fully typed objects.
@@ -48,7 +48,7 @@ No manual parsing, no boilerplate — just define your struct and let the librar
 
 ---
 
-## 🔧 Type System
+## Type System
 
 At the core of the library is the `BaseType` protocol, which defines how types behave in the C world:
 
@@ -82,12 +82,13 @@ When parsing a struct:
 
 - If a field type is itself a `BaseType`, parsing happens automatically.
 - Otherwise, annotate the field with `Annotated[..., BaseType]` to tell the parser how to interpret it.
+- Types such as `int` have a default converter for a `BaseType` if no annotation is provided. If you want to change this behavior you need to ovveride them in the following dictionary `cstructimpl.c_lib.DEFAULT_TYPE_TO_BASETYPE`.
 
 The library comes with a set of ready-to-use type definitions that cover the majority of C primitive types.
 
 ---
 
-## 📌 Examples
+## Examples
 
 Here are a few practical examples showing how `cstructimpl` works in real-world scenarios.
 
@@ -213,7 +214,7 @@ assert parsed == ItemList([
 >
 > > Yeah, sure there is! You can do it yourself!
 
-`cstructimpl` lets you define your own `BaseType` implementations to handle any kind of data that  is not present among the built-in primitives.
+`cstructimpl` lets you define your own `BaseType` implementations to handle any kind of data that is not present among the built-in primitives.
 
 For example, here's a custom type that interprets a raw integer as a **Unix timestamp**, returning a Python `datetime` object:
 
@@ -247,8 +248,7 @@ class UnixTimestamp(BaseType[datetime]):
 
 ---
 
-
-## 🎭 Autocast
+## Autocast
 
 Sometimes raw numeric values carry semantic meaning. In C, this is usually handled with `enum`s.
 With `cstructimpl`, you can automatically reinterpret values into enums (or other types) using `Autocast`.
@@ -287,7 +287,7 @@ But much simpler and less error-prone.
 
 ---
 
-## ✨ Features
+## Features
 
 - Define Python classes that map directly to C `struct`s
 - Parse raw bytes into typed objects with a single method call
@@ -298,7 +298,7 @@ But much simpler and less error-prone.
 
 ---
 
-## 📖 Use Cases
+## Use Cases
 
 - Parsing binary network protocols
 - Working with binary file formats
@@ -307,13 +307,13 @@ But much simpler and less error-prone.
 
 ---
 
-## 📚 Documentation
+## Documentation
 
 More detailed usage examples and advanced topics are available in the [documentation](https://github.com/Brendon-Mendicino/cstructimpl/wiki).
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome!
 
@@ -321,7 +321,7 @@ If you'd like to improve `cstructimpl`, please open an issue or submit a pull re
 
 ---
 
-## 📜 License
+## License
 
 This project is licensed under the terms of the [Apache-2.0 License](https://github.com/Brendon-Mendicino/cstructimpl/blob/main/LICENSE).
 
@@ -331,7 +331,17 @@ from . import c_lib
 from . import c_types
 from . import c_annotations
 
-from .c_types import BaseType, HasBaseType, CType, CArray, CPadding, CStr, CMapper
+from .c_types import (
+    BaseType,
+    HasBaseType,
+    CType,
+    CArray,
+    CPadding,
+    CStr,
+    CMapper,
+    CBool,
+    CFloat,
+)
 from .c_lib import c_struct, CStruct
 from .c_annotations import Autocast
 
@@ -347,6 +357,8 @@ __all__ = [
     "CPadding",
     "CStr",
     "CMapper",
+    "CBool",
+    "CFloat",
     "c_struct",
     "CStruct",
     "Autocast",

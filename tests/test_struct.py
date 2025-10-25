@@ -1,7 +1,12 @@
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Annotated, Literal
+import math
+from pprint import pp
+import struct
+from typing import Annotated
+
+import pytest
 
 from cstructimpl import *
 
@@ -43,7 +48,18 @@ def test_encoding_with_padding():
         x: Annotated[int, CType.U8]
         y: Annotated[int, CType.U16]
 
+    assert Point.c_size() == 4
+    assert Point.c_align() == 2
     assert Point(1, (255 << 8) + 2).c_encode() == bytes([1, 0, 2, 255])
+
+
+def test_encoding_with_padding_at_the_end():
+    @dataclass
+    class Point(CStruct):
+        x: Annotated[int, CType.U16]
+        y: Annotated[int, CType.U8]
+
+    assert Point(1, 2).c_encode() == bytes([1, 0, 2, 0])
 
 
 def test_encoding_with_default_value():
@@ -55,11 +71,41 @@ def test_encoding_with_default_value():
     assert Point(1).c_encode() == bytes([1, 2])
 
 
+def test_default_basetypes():
+    @dataclass
+    class Mixed(CStruct):
+        x: int
+        y: bool
+        z: float
+
+    assert Mixed.c_decode(
+        bytes([2, 0, 0, 0, 1, 0, 0, 0]) + bytes.fromhex("00007F43")
+    ) == Mixed(2, True, 255.0)
+
+
+@pytest.mark.parametrize(
+    "val", [0.0, 1.0, -3.14, 9999.123, float("inf"), float("-inf")]
+)
+def test_float_value(val: float):
+    @dataclass
+    class Rect(CStruct):
+        width: Annotated[float, CFloat.F32]
+        height: Annotated[float, CFloat.F64]
+
+    inc = 1e200
+    val = float(val)
+    rect = Rect(val, val * inc)
+
+    assert rect.c_encode() == struct.pack("<fxxxxd", val, val * inc)
+
+
 def test_embedded_struct():
+    @dataclass
     class Inner(CStruct):
         a: Annotated[int, CType.U8]
         b: Annotated[int, CType.U8]
 
+    @dataclass
     class Outer(CStruct):
         a: Annotated[int, CType.U16]
         inner: Inner
@@ -70,6 +116,7 @@ def test_embedded_struct():
 
 
 def test_struct_with_string():
+    @dataclass
     class SWithStr(CStruct):
         size: Annotated[int, CType.U16]
         string: Annotated[str, CStr(5)]
@@ -82,6 +129,7 @@ def test_autocast_with_enums():
         HAPPY = 0
         SAD = 1
 
+    @dataclass
     class Person(CStruct):
         age: Annotated[int, CType.U16]
         person: Annotated[PersonType, CType.U8, Autocast()]
@@ -89,7 +137,27 @@ def test_autocast_with_enums():
     assert Person.c_decode(bytes([18, 0, 1, 0])) == Person(18, PersonType.SAD)
 
 
-def test_struct_with_lists():
+@pytest.mark.parametrize("cint", list(CType))
+def test_with_list_of_int(cint: CType):
+    @dataclass
+    class Inner(CStruct):
+        a: Annotated[int, cint]
+        b: Annotated[int, cint]
+
+    @dataclass
+    class MyList(CStruct):
+        list: Annotated[list[Inner], CArray(Inner, 3)]
+
+    padding = b"\x00" * (cint.c_size() - 1)
+    data = padding.join(i.to_bytes() for i in range(1, 7)) + padding
+    print(data)
+    my = MyList(list=[Inner(1, 2), Inner(3, 4), Inner(5, 6)])
+
+    assert MyList.c_decode(data) == my
+    assert my.c_encode() == data
+
+
+def test_struct_with_lists_and_custom_align():
     @dataclass
     class Inner(CStruct, align=2):
         first: Annotated[int, CType.U8]
@@ -110,6 +178,7 @@ def test_struct_with_lists():
             Inner(9, 10, 11),
         ]
     )
+    assert parsed.c_encode() == bytes([1, 2, 3, 0, 5, 6, 7, 0, 9, 10, 11, 0])
 
 
 def test_custom_defined_base_type():

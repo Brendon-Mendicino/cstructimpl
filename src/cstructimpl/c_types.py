@@ -1,3 +1,4 @@
+import struct
 import sys
 
 from dataclasses import dataclass
@@ -106,7 +107,7 @@ class GetType:
 
 
 class CType(Enum):
-    """Represents the C native types."""
+    """Represents the C native int types."""
 
     I8 = auto()
     U8 = auto()
@@ -189,6 +190,123 @@ class CType(Enum):
         )
 
 
+class CBool(BaseType[bool]):
+    """Represent a C bool value."""
+
+    def c_size(self) -> int:
+        return 1
+
+    def c_align(self) -> int:
+        return 1
+
+    def c_signed(self) -> bool:
+        return False
+
+    def c_decode(
+        self,
+        raw: bytes,
+        *,
+        is_little_endian: bool = True,
+        signed: bool | None = None,
+    ) -> bool:
+        if signed is None:
+            signed = self.c_signed()
+
+        if len(raw) != self.c_size():
+            raise ValueError(
+                f"The raw bytes did not have the same lenght of the type! {self=} {len(raw)=}"
+            )
+
+        byteorder = "little" if is_little_endian else "big"
+
+        return bool.from_bytes(raw, byteorder=byteorder, signed=signed)
+
+    def c_encode(
+        self,
+        data: bool,
+        *,
+        is_little_endian: bool = True,
+        signed: bool | None = None,
+    ) -> bytes:
+        if signed is None:
+            signed = self.c_signed()
+
+        byteorder = "little" if is_little_endian else "big"
+
+        return data.to_bytes(
+            length=self.c_size(),
+            byteorder=byteorder,
+            signed=signed,
+        )
+
+
+class CFloat(Enum):
+    """Conforms to the IEEE 754 standard of encoded floating point numbers."""
+
+    F32 = auto()
+    F64 = auto()
+
+    def _float_fmt(self):
+        match self:
+            case self.F32:
+                return "f"
+
+            case self.F64:
+                return "d"
+
+            case _:
+                raise RuntimeError(
+                    f"Should not be here! {self=} Type was not supported: the match was not exaustive."
+                )
+
+    def c_size(self) -> int:
+        match self:
+            case self.F32:
+                return 4
+
+            case self.F64:
+                return 8
+
+            case _:
+                raise RuntimeError(
+                    f"Should not be here! {self=} Type was not supported: the match was not exaustive."
+                )
+
+    def c_align(self) -> int:
+        return self.c_size()
+
+    def c_signed(self) -> bool:
+        return False
+
+    def c_decode(
+        self,
+        raw: bytes,
+        *,
+        is_little_endian: bool = True,
+        signed: bool | None = None,
+    ) -> float:
+        _ = signed
+
+        align = "<" if is_little_endian else ">"
+
+        unpack = struct.unpack(align + self._float_fmt(), raw)
+
+        return unpack[0]
+
+    def c_encode(
+        self,
+        data: float,
+        *,
+        is_little_endian: bool = True,
+        signed: bool | None = None,
+    ) -> bytes:
+        _ = signed
+
+        align = "<" if is_little_endian else ">"
+
+        return struct.pack(align + self._float_fmt(), data)
+
+
 @dataclass
 class CArray(Generic[T], BaseType[list[T]]):
     """Represents a generic sized array."""
@@ -228,6 +346,25 @@ class CArray(Generic[T], BaseType[list[T]]):
             )
             for cell_bytes in batched(raw, self.ctype.c_size())
         ]
+
+    def c_encode(
+        self,
+        data: list[T],
+        *,
+        is_little_endian: bool = True,
+        signed: bool | None = None,
+    ) -> bytes:
+        _ = signed
+
+        if len(data) != self.array_size:
+            raise ValueError(
+                f"The length of the array is different from the one spcified in the CArray field! {len(data)=} {self.array_size=}"
+            )
+
+        return b"".join(
+            self.ctype.c_encode(item, is_little_endian=is_little_endian)
+            for item in data
+        )
 
 
 @dataclass
