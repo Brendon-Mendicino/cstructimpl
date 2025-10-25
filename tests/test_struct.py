@@ -149,7 +149,10 @@ def test_with_list_of_int(cint: CType):
         list: Annotated[list[Inner], CArray(Inner, 3)]
 
     padding = b"\x00" * (cint.c_size() - 1)
-    data = padding.join(i.to_bytes(length=1) for i in range(1, 7)) + padding
+    data = (
+        padding.join(i.to_bytes(length=1, byteorder="little") for i in range(1, 7))
+        + padding
+    )
     print(data)
     my = MyList(list=[Inner(1, 2), Inner(3, 4), Inner(5, 6)])
 
