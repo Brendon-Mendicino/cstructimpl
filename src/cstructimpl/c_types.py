@@ -82,10 +82,10 @@ class GetType:
         raw: bytes,
         *,
         is_little_endian: bool = True,
-        signed: bool | None = None,
     ):
         return self.has_ctype.c_get_type().c_decode(
-            raw, is_little_endian=is_little_endian, signed=signed
+            raw,
+            is_little_endian=is_little_endian,
         )
 
     def c_encode(
@@ -93,10 +93,10 @@ class GetType:
         data: HasBaseType,
         *,
         is_little_endian: bool = True,
-        signed: bool | None = None,
     ) -> bytes:
         return self.has_ctype.c_get_type().c_encode(
-            data, is_little_endian=is_little_endian, signed=signed
+            data,
+            is_little_endian=is_little_endian,
         )
 
 

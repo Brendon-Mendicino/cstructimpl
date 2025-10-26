@@ -138,6 +138,38 @@ class _Pipeline:
     size: int
     align: int
 
+    @classmethod
+    def build(cls, ctypes: list[BaseType], *, override_align: int | None = None):
+        pipeline = list[BaseType]()
+        current_size = 0
+        current_align = 0
+
+        for ctype in ctypes:
+            padding = -current_size % ctype.c_align()
+
+            if padding != 0:
+                pipeline.append(_MarkerPadding(padding))
+                current_size += padding
+
+            current_align = max(current_align, ctype.c_align())
+            current_size += ctype.c_size()
+            pipeline.append(ctype)
+
+        # Override struct global padding
+        if override_align is not None:
+            current_align = override_align
+
+        # Add trailing padding if needed
+        padding = -current_size % current_align
+        if padding != 0:
+            pipeline.append(_MarkerPadding(padding))
+
+        # A struct always needs to always have a size which is a mutiple of its
+        # alignemt
+        current_size += -current_size % current_align
+
+        return cls(pipeline, current_size, current_align)
+
 
 @dataclass
 class _StructTypeHandler(BaseType[T]):
@@ -154,8 +186,6 @@ class _StructTypeHandler(BaseType[T]):
         return self.pipeline.align
 
     def c_decode(self, raw: bytes, *, is_little_endian: bool = True) -> T:
-        # TODO: handle byteorder, signed, size, align
-
         raw_slice = islice(raw, None)
         cls_items = []
 
@@ -234,40 +264,6 @@ class _UnionTypeHandler(BaseType[T]):
         raise NotImplementedError()
 
 
-def _build_struct_pipeline(
-    ctypes: list[BaseType], *, override_align: int | None = None
-):
-    pipeline = list[BaseType]()
-    current_size = 0
-    current_align = 0
-
-    for ctype in ctypes:
-        padding = -current_size % ctype.c_align()
-
-        if padding != 0:
-            pipeline.append(_MarkerPadding(padding))
-            current_size += padding
-
-        current_align = max(current_align, ctype.c_align())
-        current_size += ctype.c_size()
-        pipeline.append(ctype)
-
-    # Override struct global padding
-    if override_align is not None:
-        current_align = override_align
-
-    # Add trailing padding if needed
-    padding = -current_size % current_align
-    if padding != 0:
-        pipeline.append(_MarkerPadding(padding))
-
-    # A struct always needs to always have a size which is a mutiple of its
-    # alignemt
-    current_size += -current_size % current_align
-
-    return _Pipeline(pipeline, current_size, current_align)
-
-
 def _c_struct(cls: type[T], align: int | None, strict: bool) -> type[T]:
     if not is_dataclass(cls):
         cls = dataclass(cls)
@@ -279,7 +275,7 @@ def _c_struct(cls: type[T], align: int | None, strict: bool) -> type[T]:
 
     ctypes = _types_from_dataclass(cls)
 
-    pipeline = _build_struct_pipeline(ctypes, override_align=align)
+    pipeline = _Pipeline.build(ctypes, override_align=align)
 
     @classmethod
     def c_get_type(self):
@@ -372,15 +368,38 @@ class CStruct:
 
     This is a simple wrapper over the `c_struct` decorator.
 
+    Args can be provided to the subclass initialization,
+    see the `c_struct` args section.
+
     Args:
 
     Examples:
 
+    >>> from typing import Annotated
     >>> class Point(CStruct):
     ...     x: int
     ...     y: int
+    ...
     >>> p = Point.c_decode(bytes([1, 0, 0, 0, 2, 0, 0, 0]))
     >>> assert p == Point(1, 2)
+
+    Passing arguments to the subclass initialization
+
+    >>> class Point(CStruct):
+    ...     x: Annotated[int, CInt.U8]
+    ...     y: Annotated[int, CInt.U8]
+    ...
+    >>> class Line(CStruct):
+    ...     len: Annotated[int, CInt.U8]
+    ...     angle: Annotated[int, CInt.U16]
+    ...
+    >>> class Shape(CStruct, union=True):
+    ...     point: Point
+    ...     line: Line
+    ...
+    >>> raw = bytes([1, 2, 3, 0])
+    >>> Shape.c_decode(raw)
+    Shape(point=Point(x=1, y=2), line=Line(len=1, angle=3))
     """
 
     def __init_subclass__(cls, **kwargs):

@@ -183,6 +183,16 @@ def test_struct_with_lists_and_custom_align():
     )
     assert parsed.c_encode() == bytes([1, 2, 3, 0, 5, 6, 7, 0, 9, 10, 11, 0])
 
+def test_list_interaction_alignment():
+    @dataclass
+    class ListAlign(CStruct):
+        a: Annotated[int, CInt.U16]
+        b: Annotated[int, CInt.U8]
+        c: Annotated[list[int], CArray(CInt.U8, 3)]
+
+    assert ListAlign.c_size() == 6
+    assert ListAlign.c_align() == 2
+
 
 def test_custom_defined_base_type():
     class UnixTimestamp:

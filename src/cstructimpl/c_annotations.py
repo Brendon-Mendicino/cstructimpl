@@ -10,16 +10,19 @@ class Autocast:
     >>> from enum import IntEnum
     >>> from typing import Annotated
     >>> class Mood(IntEnum):
-    ...     HAPPY = 2
-    ...     SAD = 3
+    ...     NEUTRAL = 0
+    ...     HAPPY = 1
+    ...     SAD = 2
+    ...
     >>> class Person(CStruct):
     ...     age: Annotated[int, CInt.U16]
     ...     mood: Annotated[Mood, CInt.U8, Autocast()]
-    >>> raw = bytes([50, 0, 3, 0])
+    ...
+    >>> raw = bytes([50, 0, 2, 0])
     >>> Person.c_decode(raw)
-    Person(age=50, mood=<Mood.SAD: 3>)
+    Person(age=50, mood=<Mood.SAD: 2>)
     >>> list(Person(18, Mood.HAPPY).c_encode())
-    [18, 0, 2, 0]
+    [18, 0, 1, 0]
     """
 
     pass
