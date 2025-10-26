@@ -13,8 +13,8 @@ class Autocast:
     ...     HAPPY = 2
     ...     SAD = 3
     >>> class Person(CStruct):
-    ...     age: Annotated[int, CType.U16]
-    ...     mood: Annotated[Mood, CType.U8, Autocast()]
+    ...     age: Annotated[int, CInt.U16]
+    ...     mood: Annotated[Mood, CInt.U8, Autocast()]
     >>> raw = bytes([50, 0, 3, 0])
     >>> Person.c_decode(raw)
     Person(age=50, mood=<Mood.SAD: 3>)

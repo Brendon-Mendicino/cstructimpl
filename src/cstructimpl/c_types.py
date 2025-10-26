@@ -100,7 +100,7 @@ class GetType:
         )
 
 
-class CType(Enum):
+class CInt(Enum):
     """Represents the C native int types.
 
     Args:
@@ -109,8 +109,8 @@ class CType(Enum):
 
     >>> from cstructimpl import *
     >>> class Point(CStruct):
-    ...     x: Annotated[int, CType.U16]
-    ...     y: Annotated[int, CType.U8]
+    ...     x: Annotated[int, CInt.U16]
+    ...     y: Annotated[int, CInt.U8]
     >>> Point.c_decode(bytes([1, 0, 2, 0]))
     Point(x=1, y=2)
 
@@ -323,7 +323,7 @@ class CArray(Generic[T], BaseType[list[T]]):
     >>> from cstructimpl import *
     >>> class Stream(CStruct):
     ...     id: int
-    ...     values: Annotated[list[int], CArray(CType.U8, 4)]
+    ...     values: Annotated[list[int], CArray(CInt.U8, 4)]
     >>> raw = bytes([20, 0, 0, 0, 1, 2, 3, 4])
     >>> Stream.c_decode(raw)
     Stream(id=20, values=[1, 2, 3, 4])
@@ -387,9 +387,9 @@ class CPadding(BaseType[None]):
 
     >>> from cstructimpl import *
     >>> class Point(CStruct):
-    ...     x: Annotated[int, CType.U8]
+    ...     x: Annotated[int, CInt.U8]
     ...     padding: Annotated[None, CPadding(1)]
-    ...     y: Annotated[int, CType.U16]
+    ...     y: Annotated[int, CInt.U16]
     >>> raw = bytes([1, 2, 3, 0])
     >>> Point.c_decode(raw)
     Point(x=1, padding=None, y=3)
@@ -499,8 +499,8 @@ class CMapper(Generic[T, U], BaseType[T]):
     ...     OK = 0
     ...     ERROR = 1
     >>> class Message(CStruct):
-    ...    kind: Annotated[ResultType, CMapper(CType.U8, ResultType, lambda r: r.value)]
-    ...    error_code: Annotated[int, CType.I32]
+    ...    kind: Annotated[ResultType, CMapper(CInt.U8, ResultType, lambda r: r.value)]
+    ...    error_code: Annotated[int, CInt.I32]
     >>> raw = bytes([1, 0, 0, 0, 23, 0, 0, 0])
     >>> Message.c_decode(raw)
     Message(kind=<ResultType.ERROR: 1>, error_code=23)

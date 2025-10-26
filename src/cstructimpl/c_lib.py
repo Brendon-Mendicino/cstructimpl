@@ -13,7 +13,7 @@ from typing import (
 
 from .util import hybridmethod
 from .c_annotations import Autocast
-from .c_types import BaseType, CBool, CMapper, HasBaseType, CPadding, CType, CFloat
+from .c_types import BaseType, CBool, CMapper, HasBaseType, CPadding, CInt, CFloat
 
 if sys.version_info >= (3, 11):
     from typing import Self
@@ -25,7 +25,7 @@ T = TypeVar("T")
 
 DEFAULT_TYPE_TO_BASETYPE = {
     bool: CBool(),
-    int: CType.I32,
+    int: CInt.I32,
     float: CFloat.F32,
 }
 

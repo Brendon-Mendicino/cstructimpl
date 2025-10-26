@@ -24,8 +24,8 @@ from cstructimpl import *
 
 
 class Info(CStruct):
-    age: Annotated[int, CType.U8]
-    height: Annotated[int, CType.U8]
+    age: Annotated[int, CInt.U8]
+    height: Annotated[int, CInt.U8]
 
 
 class Person(CStruct):
@@ -98,8 +98,8 @@ Define a simple struct with two fields:
 
 ```python
 class Point(CStruct):
-    x: Annotated[int, CType.U8]
-    y: Annotated[int, CType.U8]
+    x: Annotated[int, CInt.U8]
+    y: Annotated[int, CInt.U8]
 
 
 assert Point.c_size() == 2
@@ -115,8 +115,8 @@ Create a class instance and serlialize it to raw bytes
 
 ```python
 class Rect(CStruct):
-    width: Annotated[int, CType.U8]
-    height: Annotated[int, CType.U8] = 10
+    width: Annotated[int, CInt.U8]
+    height: Annotated[int, CInt.U8] = 10
 
 rect = Rect(2)
 assert rect.c_encode() == bytes([2, 10])
@@ -130,12 +130,12 @@ You can embed structs inside other structs:
 
 ```python
 class Dimensions(CStruct):
-    width: Annotated[int, CType.U8]
-    height: Annotated[int, CType.U8]
+    width: Annotated[int, CInt.U8]
+    height: Annotated[int, CInt.U8]
 
 
 class Rectangle(CStruct):
-    id: Annotated[int, CType.U16]
+    id: Annotated[int, CInt.U16]
     dims: Dimensions
 
 
@@ -152,7 +152,7 @@ Support for C-style null-terminated strings:
 
 ```python
 class Message(CStruct):
-    length: Annotated[int, CType.U16]
+    length: Annotated[int, CInt.U16]
     text: Annotated[str, CStr(5)]
 
 
@@ -173,8 +173,8 @@ class Mood(Enum):
 
 
 class Person(CStruct):
-    age: Annotated[int, CType.U16]
-    mood: Annotated[Mood, CType.U8, Autocast()]
+    age: Annotated[int, CInt.U16]
+    mood: Annotated[Mood, CInt.U8, Autocast()]
 
 
 raw = bytes([18, 0, 1, 0])
@@ -189,9 +189,9 @@ Define fixed-size arrays of structs inside another struct:
 
 ```python
 class Item(CStruct, align=2):
-    a: Annotated[int, CType.U8]
-    b: Annotated[int, CType.U8]
-    c: Annotated[int, CType.U8]
+    a: Annotated[int, CInt.U8]
+    b: Annotated[int, CInt.U8]
+    c: Annotated[int, CInt.U8]
 
 
 class ItemList(CStruct):
@@ -239,7 +239,7 @@ class UnixTimestamp(BaseType[datetime]):
     @dataclass
     class LogEntry(CStruct):
         timestamp: Annotated[datetime, UnixTimestamp()]
-        level: Annotated[int, CType.U8]
+        level: Annotated[int, CInt.U8]
 
 
     parsed = LogEntry.c_decode(bytes([255, 0, 0, 0, 3, 0, 0, 0]))
@@ -263,8 +263,8 @@ class ResultType(Enum):
 
 
 class Person(CStruct):
-    kind: Annotated[ResultType, CType.U8, Autocast()]
-    error_code: Annotated[int, CType.I32]
+    kind: Annotated[ResultType, CInt.U8, Autocast()]
+    error_code: Annotated[int, CInt.I32]
 ```
 
 This is equivalent to writing a custom builder:
@@ -279,8 +279,8 @@ class ResultType(Enum):
 
 
 class Person(CStruct):
-    kind: Annotated[ResultType, CMapper(CType.U8, lambda u8: ResultType(u8))]
-    error_code: Annotated[int, CType.I32]
+    kind: Annotated[ResultType, CMapper(CInt.U8, lambda u8: ResultType(u8))]
+    error_code: Annotated[int, CInt.I32]
 ```
 
 But much simpler and less error-prone.
@@ -334,7 +334,7 @@ from . import c_annotations
 from .c_types import (
     BaseType,
     HasBaseType,
-    CType,
+    CInt,
     CArray,
     CPadding,
     CStr,
@@ -352,7 +352,7 @@ __all__ = [
     "c_annotations",
     "BaseType",
     "HasBaseType",
-    "CType",
+    "CInt",
     "CArray",
     "CPadding",
     "CStr",

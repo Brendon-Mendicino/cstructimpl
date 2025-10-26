@@ -14,8 +14,8 @@ from cstructimpl import *
 def test_basic_decoding():
     @dataclass
     class Point(CStruct):
-        x: Annotated[int, CType.U8]
-        y: Annotated[int, CType.U8]
+        x: Annotated[int, CInt.U8]
+        y: Annotated[int, CInt.U8]
 
     assert Point.c_size() == 2
     assert Point.c_align() == 1
@@ -25,8 +25,8 @@ def test_basic_decoding():
 def test_basic_deconding_with_padding():
     @dataclass
     class Point(CStruct):
-        x: Annotated[int, CType.U8]
-        y: Annotated[int, CType.U16]
+        x: Annotated[int, CInt.U8]
+        y: Annotated[int, CInt.U16]
 
     assert Point.c_size() == 4
     assert Point.c_align() == 2
@@ -36,8 +36,8 @@ def test_basic_deconding_with_padding():
 def test_basic_encoding():
     @dataclass
     class Point(CStruct):
-        x: Annotated[int, CType.U8]
-        y: Annotated[int, CType.U8]
+        x: Annotated[int, CInt.U8]
+        y: Annotated[int, CInt.U8]
 
     assert Point(1, 2).c_encode() == bytes([1, 2])
 
@@ -45,8 +45,8 @@ def test_basic_encoding():
 def test_encoding_with_padding():
     @dataclass
     class Point(CStruct):
-        x: Annotated[int, CType.U8]
-        y: Annotated[int, CType.U16]
+        x: Annotated[int, CInt.U8]
+        y: Annotated[int, CInt.U16]
 
     assert Point.c_size() == 4
     assert Point.c_align() == 2
@@ -56,8 +56,8 @@ def test_encoding_with_padding():
 def test_encoding_with_padding_at_the_end():
     @dataclass
     class Point(CStruct):
-        x: Annotated[int, CType.U16]
-        y: Annotated[int, CType.U8]
+        x: Annotated[int, CInt.U16]
+        y: Annotated[int, CInt.U8]
 
     assert Point(1, 2).c_encode() == bytes([1, 0, 2, 0])
 
@@ -65,8 +65,8 @@ def test_encoding_with_padding_at_the_end():
 def test_encoding_with_default_value():
     @dataclass
     class Point(CStruct):
-        x: Annotated[int, CType.U8]
-        y: Annotated[int, CType.U8] = 2
+        x: Annotated[int, CInt.U8]
+        y: Annotated[int, CInt.U8] = 2
 
     assert Point(1).c_encode() == bytes([1, 2])
 
@@ -102,12 +102,12 @@ def test_float_value(val: float):
 def test_embedded_struct():
     @dataclass
     class Inner(CStruct):
-        a: Annotated[int, CType.U8]
-        b: Annotated[int, CType.U8]
+        a: Annotated[int, CInt.U8]
+        b: Annotated[int, CInt.U8]
 
     @dataclass
     class Outer(CStruct):
-        a: Annotated[int, CType.U16]
+        a: Annotated[int, CInt.U16]
         inner: Inner
 
     assert Outer.c_size() == 4
@@ -118,7 +118,7 @@ def test_embedded_struct():
 def test_struct_with_string():
     @dataclass
     class SWithStr(CStruct):
-        size: Annotated[int, CType.U16]
+        size: Annotated[int, CInt.U16]
         string: Annotated[str, CStr(5)]
 
     assert SWithStr.c_decode(bytes([5, 0]) + b"Helo\x00") == SWithStr(5, "Helo")
@@ -131,14 +131,14 @@ def test_autocast_with_enums():
 
     @dataclass
     class Person(CStruct):
-        age: Annotated[int, CType.U16]
-        person: Annotated[PersonType, CType.U8, Autocast()]
+        age: Annotated[int, CInt.U16]
+        person: Annotated[PersonType, CInt.U8, Autocast()]
 
     assert Person.c_decode(bytes([18, 0, 1, 0])) == Person(18, PersonType.SAD)
 
 
-@pytest.mark.parametrize("cint", list(CType))
-def test_with_list_of_int(cint: CType):
+@pytest.mark.parametrize("cint", list(CInt))
+def test_with_list_of_int(cint: CInt):
     @dataclass
     class Inner(CStruct):
         a: Annotated[int, cint]
@@ -163,9 +163,9 @@ def test_with_list_of_int(cint: CType):
 def test_struct_with_lists_and_custom_align():
     @dataclass
     class Inner(CStruct, align=2):
-        first: Annotated[int, CType.U8]
-        second: Annotated[int, CType.U8]
-        third: Annotated[int, CType.U8]
+        first: Annotated[int, CInt.U8]
+        second: Annotated[int, CInt.U8]
+        third: Annotated[int, CInt.U8]
 
     @dataclass
     class MyList(CStruct):
@@ -210,7 +210,7 @@ def test_custom_defined_base_type():
     @dataclass
     class LogEntry(CStruct):
         timestamp: Annotated[datetime, UnixTimestamp()]
-        level: Annotated[int, CType.U8]
+        level: Annotated[int, CInt.U8]
 
     parsed = LogEntry.c_decode(bytes([255, 0, 0, 0, 3, 0, 0, 0]))
     assert parsed == LogEntry(datetime.fromtimestamp(255), 3)
