@@ -391,7 +391,7 @@ class CStruct:
         if sys.version_info >= (3, 12):
             attrs = BaseType.__protocol_attrs__
         else:
-            attrs = {"c_size", "c_align", "c_signed", "c_decode", "c_encode"}
+            attrs = {"c_size", "c_align", "c_decode", "c_encode"}
 
         for attr in attrs:
             if attr == "c_encode":
