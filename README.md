@@ -18,22 +18,19 @@ pip install cstructimpl
 
 Define your struct and parse raw bytes:
 
-```python
-from cstructimpl import *
+```pycon
+>>> from cstructimpl import *
+>>> class Info(CStruct):
+...     age: Annotated[int, CInt.U8]
+...     height: Annotated[int, CInt.U8]
+...
+>>> class Person(CStruct):
+...     info: Info
+...     name: Annotated[str, CStr(6)]
+...
+>>> Person.c_decode(bytes([18, 170]) + b"Pippo\x00")
+Person(info=Info(age=18, height=170), name='Pippo')
 
-
-class Info(CStruct):
-    age: Annotated[int, CInt.U8]
-    height: Annotated[int, CInt.U8]
-
-
-class Person(CStruct):
-    info: Info
-    name: Annotated[str, CStr(6)]
-
-
-person = Person.c_decode(bytes([18, 170]) + b"Pippo\x00")
-print(person)  # Person(info=Info(age=18, height=170), name='Pippo')
 ```
 
 ---
@@ -62,7 +59,6 @@ class BaseType(Protocol[T]):
         raw: bytes,
         *,
         is_little_endian: bool = True,
-        signed: bool | None = None,
     ) -> T | None: ...
 
     def c_encode(
@@ -70,7 +66,6 @@ class BaseType(Protocol[T]):
         data: T,
         *,
         is_little_endian: bool = True,
-        signed: bool | None = None,
     ) -> bytes: ...
 ```
 
@@ -107,15 +102,18 @@ Here are a few practical examples showing how `cstructimpl` works in real-world 
 
 Define a simple struct with two fields:
 
-```python
-class Point(CStruct):
-    x: Annotated[int, CInt.U8]
-    y: Annotated[int, CInt.U8]
+```pycon
+>>> class Point(CStruct):
+...     x: Annotated[int, CInt.U8]
+...     y: Annotated[int, CInt.U8]
+...
+>>> Point.c_size()
+2
+>>> Point.c_align()
+1
+>>> Point.c_decode(bytes([1, 2]))
+Point(x=1, y=2)
 
-
-assert Point.c_size() == 2
-assert Point.c_align() == 1
-assert Point.c_decode(bytes([1, 2])) == Point(1, 2)
 ```
 
 ---
@@ -124,13 +122,15 @@ assert Point.c_decode(bytes([1, 2])) == Point(1, 2)
 
 Create a class instance and serlialize it to raw bytes
 
-```python
-class Rect(CStruct):
-    width: Annotated[int, CInt.U8]
-    height: Annotated[int, CInt.U8] = 10
+```pycon
+>>> class Rect(CStruct):
+...     width: Annotated[int, CInt.U8]
+...     height: Annotated[int, CInt.U8] = 10
+...
+>>> rect = Rect(2)
+>>> list(rect.c_encode())
+[2, 10]
 
-rect = Rect(2)
-assert rect.c_encode() == bytes([2, 10])
 ```
 
 ---
@@ -139,20 +139,22 @@ assert rect.c_encode() == bytes([2, 10])
 
 You can embed structs inside other structs:
 
-```python
-class Dimensions(CStruct):
-    width: Annotated[int, CInt.U8]
-    height: Annotated[int, CInt.U8]
+```pycon
+>>> class Dimensions(CStruct):
+...     width: Annotated[int, CInt.U8]
+...     height: Annotated[int, CInt.U8]
+...
+>>> class Rectangle(CStruct):
+...     id: Annotated[int, CInt.U16]
+...     dims: Dimensions
+...
+>>> Rectangle.c_size()
+4
+>>> Rectangle.c_align()
+2
+>>> Rectangle.c_decode(bytes([1, 0, 2, 3]))
+Rectangle(id=1, dims=Dimensions(width=2, height=3))
 
-
-class Rectangle(CStruct):
-    id: Annotated[int, CInt.U16]
-    dims: Dimensions
-
-
-assert Rectangle.c_size() == 4
-assert Rectangle.c_align() == 2
-assert Rectangle.c_decode(bytes([1, 0, 2, 3])) == Rectangle(1, Dimensions(2, 3))
 ```
 
 ---
@@ -161,14 +163,15 @@ assert Rectangle.c_decode(bytes([1, 0, 2, 3])) == Rectangle(1, Dimensions(2, 3))
 
 Support for C-style null-terminated strings:
 
-```python
-class Message(CStruct):
-    length: Annotated[int, CInt.U16]
-    text: Annotated[str, CStr(5)]
+```pycon
+>>> class Message(CStruct):
+...     length: Annotated[int, CInt.U16]
+...     text: Annotated[str, CStr(5)]
+... 
+>>> raw = bytes([5, 0]) + b"Helo\x00"
+>>> Message.c_decode(raw)
+Message(length=5, text='Helo')
 
-
-raw = bytes([5, 0]) + b"Helo\x00"
-assert Message.c_decode(raw) == Message(5, "Helo")
 ```
 
 ---
@@ -177,19 +180,19 @@ assert Message.c_decode(raw) == Message(5, "Helo")
 
 Automatically cast numeric values into Python `Enum`s:
 
-```python
-class Mood(Enum):
-    HAPPY = 0
-    SAD = 1
+```pycon
+>>> class Mood(IntEnum):
+...     HAPPY = 0
+...     SAD = 1
+... 
+>>> class Person(CStruct):
+...     age: Annotated[int, CInt.U16]
+...     mood: Annotated[Mood, CInt.U8, Autocast()]
+... 
+>>> raw = bytes([18, 0, 1, 0])
+>>> Person.c_decode(raw)
+Person(age=18, mood=<Mood.SAD: 1>)
 
-
-class Person(CStruct):
-    age: Annotated[int, CInt.U16]
-    mood: Annotated[Mood, CInt.U8, Autocast()]
-
-
-raw = bytes([18, 0, 1, 0])
-assert Person.c_decode(raw) == Person(18, Mood.SAD)
 ```
 
 ---
@@ -198,25 +201,24 @@ assert Person.c_decode(raw) == Person(18, Mood.SAD)
 
 Define fixed-size arrays of structs inside another struct:
 
-```python
-class Item(CStruct, align=2):
-    a: Annotated[int, CInt.U8]
-    b: Annotated[int, CInt.U8]
-    c: Annotated[int, CInt.U8]
+```pycon
+>>> class Item(CStruct, align=2):
+...     a: Annotated[int, CInt.U8]
+...     b: Annotated[int, CInt.U8]
+...     c: Annotated[int, CInt.U8]
+... 
+>>> class ItemList(CStruct):
+...     items: Annotated[list[Item], CArray(Item, 3)]
+... 
+>>> data = bytes(range(1, 13))  # 3 items x 4 bytes each
+>>> parsed = ItemList.c_decode(data)
+>>> parsed == ItemList([
+...     Item(1, 2, 3),
+...     Item(5, 6, 7),
+...     Item(9, 10, 11),
+... ])
+True
 
-
-class ItemList(CStruct):
-    items: Annotated[list[Item], CArray(Item, 3)]
-
-
-data = bytes(range(1, 13))  # 3 items x 4 bytes each
-parsed = ItemList.c_decode(data)
-
-assert parsed == ItemList([
-    Item(1, 2, 3),
-    Item(5, 6, 7),
-    Item(9, 10, 11),
-])
 ```
 
 ### Custom BaseType
@@ -229,29 +231,29 @@ assert parsed == ItemList([
 
 For example, here's a custom type that interprets a raw integer as a **Unix timestamp**, returning a Python `datetime` object:
 
-```python
-class UnixTimestamp(BaseType[datetime]):
-    def c_size(self) -> int:
-        return 4
+```pycon
+>>> from datetime import datetime
+>>> class UnixTimestamp(BaseType[datetime]):
+...     def c_size(self) -> int:
+...         return 4
+... 
+...     def c_align(self) -> int:
+...         return 4
+... 
+...     def c_decode(self, raw: bytes, *, is_little_endian: bool = True) -> datetime:
+...         byteorder = "little" if is_little_endian else "big"
+...         ts = int.from_bytes(raw, byteorder=byteorder, signed=False)
+...         return datetime.fromtimestamp(ts)
+... 
+...     def c_encode(self): pass
+... 
+>>> class LogEntry(CStruct):
+...     timestamp: Annotated[datetime, UnixTimestamp()]
+...     level: Annotated[int, CInt.U8]
+... 
+>>> LogEntry.c_decode(bytes([55, 0, 0, 0, 3, 0, 0, 0]))
+LogEntry(timestamp=datetime.datetime(1970, ..., 55), level=3)
 
-    def c_align(self) -> int:
-        return 4
-
-    def c_decode(self, raw: bytes, *, byteorder="little", signed=False) -> datetime:
-        ts = int.from_bytes(raw, byteorder=byteorder, signed=signed)
-        return datetime.utcfromtimestamp(ts)
-
-    def c_encode(self): pass
-
-
-    @dataclass
-    class LogEntry(CStruct):
-        timestamp: Annotated[datetime, UnixTimestamp()]
-        level: Annotated[int, CInt.U8]
-
-
-    parsed = LogEntry.c_decode(bytes([255, 0, 0, 0, 3, 0, 0, 0]))
-    assert parsed == LogEntry(datetime.fromtimestamp(255), 3)
 ```
 
 ---
@@ -261,34 +263,30 @@ class UnixTimestamp(BaseType[datetime]):
 Sometimes raw numeric values carry semantic meaning. In C, this is usually handled with `enum`s.  
 With `cstructimpl`, you can automatically reinterpret values into enums (or other types) using `Autocast`.
 
-```python
-from cstructimpl import *
+```pycon
+>>> class ResultType(IntEnum):
+...     OK = 0
+...     ERROR = 1
+... 
+>>> class Person(CStruct):
+...     kind: Annotated[ResultType, CInt.U8, Autocast()]
+...     error_code: Annotated[int, CInt.I32]
+...
 
-
-class ResultType(Enum):
-    OK = 0
-    ERROR = 1
-
-
-class Person(CStruct):
-    kind: Annotated[ResultType, CInt.U8, Autocast()]
-    error_code: Annotated[int, CInt.I32]
 ```
 
 This is equivalent to writing a custom builder:
 
-```python
-from cstructimpl import *
+```pycon
+>>> class ResultType(IntEnum):
+...     OK = 0
+...     ERROR = 1
+... 
+>>> class Person(CStruct):
+...     kind: Annotated[ResultType, CMapper(CInt.U8, ResultType, lambda e: e.value)]
+...     error_code: Annotated[int, CInt.I32]
+...
 
-
-class ResultType(Enum):
-    OK = 0
-    ERROR = 1
-
-
-class Person(CStruct):
-    kind: Annotated[ResultType, CMapper(CInt.U8, lambda u8: ResultType(u8))]
-    error_code: Annotated[int, CInt.I32]
 ```
 
 But much simpler and less error-prone.
