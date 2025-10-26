@@ -139,7 +139,9 @@ class _Pipeline:
     align: int
 
     @classmethod
-    def build(cls, ctypes: list[BaseType], *, override_align: int | None = None):
+    def build_with_padding(
+        cls, ctypes: list[BaseType], *, override_align: int | None = None
+    ):
         pipeline = list[BaseType]()
         current_size = 0
         current_align = 0
@@ -169,6 +171,22 @@ class _Pipeline:
         current_size += -current_size % current_align
 
         return cls(pipeline, current_size, current_align)
+
+    @classmethod
+    def build_packed(cls, ctypes: list[BaseType], *, override_align: int | None = None):
+        pipeline = list[BaseType]()
+        current_size = 0
+
+        for ctype in ctypes:
+            current_size += ctype.c_size()
+            pipeline.append(ctype)
+
+        alignment = min(current_size, 1)
+
+        if override_align is not None:
+            alignment = override_align
+
+        return cls(pipeline, current_size, alignment)
 
 
 @dataclass
@@ -264,7 +282,7 @@ class _UnionTypeHandler(BaseType[T]):
         raise NotImplementedError()
 
 
-def _c_struct(cls: type[T], align: int | None, strict: bool) -> type[T]:
+def _c_struct(cls: type[T], align: int | None, strict: bool, packed: bool) -> type[T]:
     if not is_dataclass(cls):
         cls = dataclass(cls)
 
@@ -275,7 +293,10 @@ def _c_struct(cls: type[T], align: int | None, strict: bool) -> type[T]:
 
     ctypes = _types_from_dataclass(cls)
 
-    pipeline = _Pipeline.build(ctypes, override_align=align)
+    if packed:
+        pipeline = _Pipeline.build_packed(ctypes, override_align=align)
+    else:
+        pipeline = _Pipeline.build_with_padding(ctypes, override_align=align)
 
     @classmethod
     def c_get_type(self):
@@ -321,6 +342,7 @@ def c_struct(
     *,
     align: int | None = None,
     union: bool = False,
+    packed: bool = False,
     strict: bool = True,
 ) -> Callable[[type[T]], type[T]]:
     """Decorator used to automatically implement the `BaseType`
@@ -336,6 +358,8 @@ def c_struct(
         align (int | None, optional): struct alignment. Defaults to None.
         union (bool, optional): if true the fields of a struct are
             interpreted as a C union. Defaults to False.
+        packed (bool, optional): if true no padding is added between
+            the struct fields. Defaults to False.
         strict (bool, optional): check that the converted value in
             a parameter matches the actual type defined in the class. Defaults to True.
 
@@ -355,7 +379,7 @@ def c_struct(
 
     def c_struct_inner(cls: type[T]):
         if not union:
-            return _c_struct(cls, align, strict)
+            return _c_struct(cls, align, strict, packed)
         else:
             return _c_union(cls, align, strict)
 

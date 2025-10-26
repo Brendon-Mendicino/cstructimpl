@@ -183,6 +183,7 @@ def test_struct_with_lists_and_custom_align():
     )
     assert parsed.c_encode() == bytes([1, 2, 3, 0, 5, 6, 7, 0, 9, 10, 11, 0])
 
+
 def test_list_interaction_alignment():
     @dataclass
     class ListAlign(CStruct):
@@ -207,11 +208,9 @@ def test_custom_defined_base_type():
             raw: bytes,
             *,
             is_little_endian: bool = True,
-            signed=False,
         ) -> datetime:
-            ts = int.from_bytes(
-                raw, byteorder="little" if is_little_endian else "big", signed=signed
-            )
+            byteorder = "little" if is_little_endian else "big"
+            ts = int.from_bytes(raw, byteorder=byteorder, signed=False)
             return datetime.fromtimestamp(ts)
 
         def c_encode(self):
@@ -224,3 +223,26 @@ def test_custom_defined_base_type():
 
     parsed = LogEntry.c_decode(bytes([255, 0, 0, 0, 3, 0, 0, 0]))
     assert parsed == LogEntry(datetime.fromtimestamp(255), 3)
+
+
+def test_packed_struct():
+    @dataclass
+    class Packed(CStruct, packed=True):
+        a: Annotated[int, CInt.I8]
+        b: Annotated[int, CInt.I32]
+
+    @dataclass
+    class Outer(CStruct):
+        a: Annotated[int, CInt.I16]
+        b: Packed
+
+    assert Packed.c_size() == 5
+    assert Packed.c_align() == 1
+    assert Outer.c_size() == 8
+    assert Outer.c_align() == 2
+
+    raw = bytes([3, 0, 1, 2, 0, 0, 0, 0])
+    actual = Outer(3, Packed(1, 2))
+
+    assert Outer.c_decode(raw) == actual
+    assert actual.c_encode() == raw
