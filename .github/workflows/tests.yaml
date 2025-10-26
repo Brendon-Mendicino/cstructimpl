@@ -30,4 +30,4 @@ jobs:
 
     - name: Run tests
       run: |
-        pytest --doctest-modules --maxfail=1 --disable-warnings -q
+        pytest --doctest-modules --disable-warnings -q

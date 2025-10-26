@@ -84,6 +84,19 @@ When parsing a struct:
 
 The library comes with a set of ready-to-use type definitions that cover the majority of C primitive types.
 
+| Class / Type       | Description                                                                                                                     |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| **`BaseType[T]`**  | Protocol that defines the interface for any encodable/decodable C-compatible type.                                              |
+| **`HasBaseType`**  | Protocol for classes that return their own associated `BaseType`.                                                               |
+| **`GetType`**      | Wrapper calling `c_get_type()` on classes implementing `HasBaseType`. Enables automatic size, alignment, decode, encode access. |
+| **`CInt`**         | Enum covering signed/unsigned C integer types (I8/U8 → I128/U128).                                                              |
+| **`CBool`**        | Boolean BaseType with a C-compatible single-byte representation.                                                                |
+| **`CFloat`**       | Enum of IEEE‑754‑compliant floating‑point formats (`F32`, `F64`).                                                               |
+| **`CArray[T]`**    | Generic BaseType for fixed‑length arrays of a given element type.                                                               |
+| **`CPadding`**     | Represents unused/padding bytes between struct fields.                                                                          |
+| **`CStr`**         | C‑style null‑terminated string of fixed max length.                                                                             |
+| **`CMapper[T,U]`** | Adapts between a `BaseType[U]` and custom Python type `T`. Useful for enums or custom conversions.                              |
+
 ---
 
 ## Examples

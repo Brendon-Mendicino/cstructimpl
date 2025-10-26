@@ -41,7 +41,7 @@ print(person)  # Person(info=Info(age=18, height=170), name='Pippo')
 
 ## Introduction
 
-`cstructimpl` makes working with binary data in Python simple and intuitive.
+`cstructimpl` makes working with binary data in Python simple and intuitive.  
 By subclassing `CStruct`, you can define Python classes that map directly to C-style `struct`s and parse raw bytes into fully typed objects.
 
 No manual parsing, no boilerplate — just define your struct and let the library do the heavy lifting.
@@ -57,7 +57,6 @@ class BaseType(Protocol[T]):
 
     def c_size(self) -> int: ...
     def c_align(self) -> int: ...
-    def c_signed(self) -> bool: ...
 
     def c_decode(
         self,
@@ -85,6 +84,19 @@ When parsing a struct:
 - Types such as `int` have a default converter for a `BaseType` if no annotation is provided. If you want to change this behavior you need to ovveride them in the following dictionary `cstructimpl.c_lib.DEFAULT_TYPE_TO_BASETYPE`.
 
 The library comes with a set of ready-to-use type definitions that cover the majority of C primitive types.
+
+| Class / Type       | Description                                                                                                                     |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| **`BaseType[T]`**  | Protocol that defines the interface for any encodable/decodable C-compatible type.                                              |
+| **`HasBaseType`**  | Protocol for classes that return their own associated `BaseType`.                                                               |
+| **`GetType`**      | Wrapper calling `c_get_type()` on classes implementing `HasBaseType`. Enables automatic size, alignment, decode, encode access. |
+| **`CInt`**         | Enum covering signed/unsigned C integer types (I8/U8 → I128/U128).                                                              |
+| **`CBool`**        | Boolean BaseType with a C-compatible single-byte representation.                                                                |
+| **`CFloat`**       | Enum of IEEE‑754‑compliant floating‑point formats (`F32`, `F64`).                                                               |
+| **`CArray[T]`**    | Generic BaseType for fixed‑length arrays of a given element type.                                                               |
+| **`CPadding`**     | Represents unused/padding bytes between struct fields.                                                                          |
+| **`CStr`**         | C‑style null‑terminated string of fixed max length.                                                                             |
+| **`CMapper[T,U]`** | Adapts between a `BaseType[U]` and custom Python type `T`. Useful for enums or custom conversions.                              |
 
 ---
 
@@ -226,9 +238,6 @@ class UnixTimestamp(BaseType[datetime]):
     def c_align(self) -> int:
         return 4
 
-    def c_signed(self) -> bool:
-        return False
-
     def c_decode(self, raw: bytes, *, byteorder="little", signed=False) -> datetime:
         ts = int.from_bytes(raw, byteorder=byteorder, signed=signed)
         return datetime.utcfromtimestamp(ts)
@@ -250,7 +259,7 @@ class UnixTimestamp(BaseType[datetime]):
 
 ## Autocast
 
-Sometimes raw numeric values carry semantic meaning. In C, this is usually handled with `enum`s.
+Sometimes raw numeric values carry semantic meaning. In C, this is usually handled with `enum`s.  
 With `cstructimpl`, you can automatically reinterpret values into enums (or other types) using `Autocast`.
 
 ```python
