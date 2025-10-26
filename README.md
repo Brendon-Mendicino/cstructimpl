@@ -56,7 +56,6 @@ class BaseType(Protocol[T]):
 
     def c_size(self) -> int: ...
     def c_align(self) -> int: ...
-    def c_signed(self) -> bool: ...
 
     def c_decode(
         self,
@@ -197,7 +196,7 @@ class ItemList(CStruct):
     items: Annotated[list[Item], CArray(Item, 3)]
 
 
-data = bytes(range(1, 13))  # 3 items × 4 bytes each
+data = bytes(range(1, 13))  # 3 items x 4 bytes each
 parsed = ItemList.c_decode(data)
 
 assert parsed == ItemList([
@@ -224,9 +223,6 @@ class UnixTimestamp(BaseType[datetime]):
 
     def c_align(self) -> int:
         return 4
-
-    def c_signed(self) -> bool:
-        return False
 
     def c_decode(self, raw: bytes, *, byteorder="little", signed=False) -> datetime:
         ts = int.from_bytes(raw, byteorder=byteorder, signed=signed)

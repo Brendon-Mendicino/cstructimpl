@@ -146,7 +146,7 @@ def test_with_list_of_int(cint: CType):
 
     @dataclass
     class MyList(CStruct):
-        list: Annotated[list[Inner], CArray(Inner, 3)]
+        list: Annotated[list[Inner], CArray(Inner.c_get_type(), 3)]
 
     padding = b"\x00" * (cint.c_size() - 1)
     data = (
@@ -169,7 +169,7 @@ def test_struct_with_lists_and_custom_align():
 
     @dataclass
     class MyList(CStruct):
-        list: Annotated[list[Inner], CArray(Inner, 3)]
+        list: Annotated[list[Inner], CArray(Inner.c_get_type(), 3)]
 
     data = bytes(range(1, 13))  # 3 items × 4 bytes each
     parsed = MyList.c_decode(data)
@@ -185,16 +185,12 @@ def test_struct_with_lists_and_custom_align():
 
 
 def test_custom_defined_base_type():
-    @dataclass
     class UnixTimestamp:
         def c_size(self) -> int:
             return 4
 
         def c_align(self) -> int:
             return 4
-
-        def c_signed(self) -> bool:
-            return False
 
         def c_decode(
             self,

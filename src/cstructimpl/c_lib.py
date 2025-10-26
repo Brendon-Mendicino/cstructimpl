@@ -94,31 +94,32 @@ def _get_basetype(t: Field) -> BaseType | None:
 
 
 def _types_from_dataclass(cls: type) -> list[BaseType]:
-    ctypes = list[BaseType]()
+    """Extracts the BaseType from each dataclass field."""
+    base_types = list[BaseType]()
 
     for field in fields(cls):
         autocast = _is_autocast(field)
-        ctype = _get_basetype(field)
+        base_type = _get_basetype(field)
 
-        if ctype is None:
+        if base_type is None:
             raise ValueError(
-                f"The field of the class is not annotated with a Type, nor the orgigin is a Type! {cls=} {field=}"
+                f"The field of the class is not annotated with a BaseType, nor the origin is a BaseType! {cls=} {field=}"
             )
 
         if autocast:
             cls_field_type = _get_field_origin(field)
-            ret_type = _get_ctype_decode_type(ctype)
+            ret_type = _get_ctype_decode_type(base_type)
 
             if not isinstance(cls_field_type, type):
                 raise ValueError(
                     f"Autocast is set to True, but the dataclass field is not an instance of `type`! Cannot cast serialized object to the field type. Either disable autocast or change type signature. {cls_field_type=}"
                 )
 
-            ctype = CMapper(ctype, cls_field_type, ret_type)
+            base_type = CMapper(base_type, cls_field_type, ret_type)
 
-        ctypes.append(ctype)
+        base_types.append(base_type)
 
-    return ctypes
+    return base_types
 
 
 def _strict_dataclass_fields_check(cls: type, cls_items: list):
@@ -152,16 +153,7 @@ class _StructTypeHandler(BaseType[T]):
     def c_align(self) -> int:
         return self.pipeline.align
 
-    def c_signed(self) -> bool:
-        raise NotImplementedError()
-
-    def c_decode(
-        self,
-        raw: bytes,
-        *,
-        is_little_endian: bool = True,
-        signed: bool | None = None,
-    ) -> T:
+    def c_decode(self, raw: bytes, *, is_little_endian: bool = True) -> T:
         # TODO: handle byteorder, signed, size, align
 
         raw_slice = islice(raw, None)
@@ -173,11 +165,7 @@ class _StructTypeHandler(BaseType[T]):
             if isinstance(pipe_item, _MarkerPadding):
                 continue
 
-            cls_item = pipe_item.c_decode(
-                raw_bytes,
-                is_little_endian=is_little_endian,
-                signed=signed,
-            )
+            cls_item = pipe_item.c_decode(raw_bytes, is_little_endian=is_little_endian)
 
             cls_items.append(cls_item)
 
@@ -186,21 +174,17 @@ class _StructTypeHandler(BaseType[T]):
 
         return self.cls(*cls_items)
 
-    def c_encode(
-        self, data: T, *, is_little_endian: bool = True, signed: bool | None = None
-    ) -> bytes:
+    def c_encode(self, data: T, *, is_little_endian: bool = True) -> bytes:
         raw_data = bytes()
         data_fields = (getattr(data, f.name) for f in fields(data))
 
         for pipe_item in self.pipeline.pipeline:
             if isinstance(pipe_item, _MarkerPadding):
-                raw_data += pipe_item.c_encode(
-                    None, is_little_endian=is_little_endian, signed=signed
-                )
+                raw_data += pipe_item.c_encode(None, is_little_endian=is_little_endian)
                 continue
 
             raw_data += pipe_item.c_encode(
-                next(data_fields), is_little_endian=is_little_endian, signed=signed
+                next(data_fields), is_little_endian=is_little_endian
             )
 
         return raw_data
@@ -220,15 +204,11 @@ class _UnionTypeHandler(BaseType[T]):
     def c_align(self) -> int:
         return self.pipeline.align
 
-    def c_signed(self) -> bool:
-        raise NotImplementedError()
-
     def c_decode(
         self,
         raw: bytes,
         *,
         is_little_endian: bool = True,
-        signed: bool | None = None,
     ) -> T:
         # TODO: handle byteorder, signed, size, align
 
@@ -238,9 +218,7 @@ class _UnionTypeHandler(BaseType[T]):
             raw_bytes = islice(raw, pipe_item.c_size())
 
             cls_item = pipe_item.c_decode(
-                bytes(raw_bytes),
-                is_little_endian=is_little_endian,
-                signed=signed,
+                bytes(raw_bytes), is_little_endian=is_little_endian
             )
 
             if cls_item is not None:
@@ -252,10 +230,8 @@ class _UnionTypeHandler(BaseType[T]):
         # TODO: make union fields lazyly evalutated
         return self.cls(*cls_items)
 
-    def c_encode(
-        self, data: T, *, is_little_endian: bool = True, signed: bool | None = None
-    ) -> bytes:
-        pass
+    def c_encode(self, data: T, *, is_little_endian: bool = True) -> bytes:
+        raise NotImplementedError()
 
 
 def _build_struct_pipeline(
@@ -353,7 +329,8 @@ def c_struct(
 ) -> Callable[[type[T]], type[T]]:
     """Decorator used to automatically implement the `BaseType`
     methods in a class. Every class that is annotated with
-    this decorator, automatically becomes a `BaseType` itself.
+    this decorator, automatically becomes a `BaseType` itself
+    by providing the `c_get_type()` method.
 
     This decorator converts the class in a `dataclass` it isn't already,
     this is done in order to exploit the dataclasses utility
@@ -429,15 +406,11 @@ class CStruct:
     def c_align(cls) -> int: ...
 
     @classmethod
-    def c_signed(cls) -> bool: ...
-
-    @classmethod
     def c_decode(
         cls,
         raw: bytes,
         *,
         is_little_endian: bool = True,
-        signed: bool | None = None,
     ) -> Self: ...
 
     # TODO: decide if this method should be split into two separate ones, one left as the signature of `BaseType` and another one that class this with data=self
@@ -447,7 +420,6 @@ class CStruct:
         data: Self | None = None,
         *,
         is_little_endian: bool = True,
-        signed: bool | None = None,
     ) -> bytes:
         if data is None and not isinstance(self, type):
             data = self
@@ -455,7 +427,7 @@ class CStruct:
         if data is None:
             raise ValueError("Data is None!")
 
-        return self._c_encode(data, is_little_endian=is_little_endian, signed=signed)
+        return self._c_encode(data, is_little_endian=is_little_endian)
 
     @classmethod
     def c_get_type(cls) -> BaseType[Self]: ...

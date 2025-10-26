@@ -198,7 +198,7 @@ class ItemList(CStruct):
     items: Annotated[list[Item], CArray(Item, 3)]
 
 
-data = bytes(range(1, 13))  # 3 items × 4 bytes each
+data = bytes(range(1, 13))  # 3 items x 4 bytes each
 parsed = ItemList.c_decode(data)
 
 assert parsed == ItemList([

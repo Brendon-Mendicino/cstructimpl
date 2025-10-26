@@ -8,6 +8,7 @@ from typing import (
     Generic,
     Protocol,
     TypeVar,
+    Annotated,
     cast,
     runtime_checkable,
 )
@@ -43,14 +44,11 @@ class BaseType(Protocol[T]):
 
     def c_align(self) -> int: ...
 
-    def c_signed(self) -> bool: ...
-
     def c_decode(
         self,
         raw: bytes,
         *,
         is_little_endian: bool = True,
-        signed: bool | None = None,
     ) -> T | None: ...
 
     def c_encode(
@@ -58,7 +56,6 @@ class BaseType(Protocol[T]):
         data: T,
         *,
         is_little_endian: bool = True,
-        signed: bool | None = None,
     ) -> bytes: ...
 
 
@@ -79,9 +76,6 @@ class GetType:
 
     def c_align(self) -> int:
         return self.has_ctype.c_get_type().c_align()
-
-    def c_signed(self) -> bool:
-        return self.has_ctype.c_get_type().c_signed()
 
     def c_decode(
         self,
@@ -107,7 +101,20 @@ class GetType:
 
 
 class CType(Enum):
-    """Represents the C native int types."""
+    """Represents the C native int types.
+
+    Args:
+
+    Examples:
+
+    >>> from cstructimpl import *
+    >>> class Point(CStruct):
+    ...     x: Annotated[int, CType.U16]
+    ...     y: Annotated[int, CType.U8]
+    >>> Point.c_decode(bytes([1, 0, 2, 0]))
+    Point(x=1, y=2)
+
+    """
 
     I8 = auto()
     U8 = auto()
@@ -145,7 +152,7 @@ class CType(Enum):
     def c_align(self) -> int:
         return self.c_size()
 
-    def c_signed(self) -> bool:
+    def _signed(self) -> bool:
         match self:
             case self.I8 | self.I16 | self.I32 | self.I64 | self.I128:
                 return True
@@ -163,35 +170,42 @@ class CType(Enum):
         raw: bytes,
         *,
         is_little_endian: bool = True,
-        signed: bool | None = None,
     ) -> int:
-        if signed is None:
-            signed = self.c_signed()
-
         if len(raw) != self.c_size():
             raise ValueError(
                 f"The raw bytes did not have the same lenght of the type! {self=} {len(raw)=}"
             )
 
         return int.from_bytes(
-            raw, byteorder="little" if is_little_endian else "big", signed=signed
+            raw,
+            byteorder="little" if is_little_endian else "big",
+            signed=self._signed(),
         )
 
-    def c_encode(
-        self, data: int, *, is_little_endian: bool = True, signed: bool | None = None
-    ) -> bytes:
-        if signed is None:
-            signed = self.c_signed()
-
+    def c_encode(self, data: int, *, is_little_endian: bool = True) -> bytes:
         return data.to_bytes(
             length=self.c_size(),
             byteorder="little" if is_little_endian else "big",
-            signed=signed,
+            signed=self._signed(),
         )
 
 
 class CBool(BaseType[bool]):
-    """Represent a C bool value."""
+    """Represent a C bool value.
+
+    Args:
+
+    Examples:
+
+    >>> from cstructimpl import *
+    >>> class Person(CStruct):
+    ...     age: int
+    ...     adult: Annotated[bool, CBool()]
+    >>> raw = bytes([23, 0, 0, 0, 1, 0, 0, 0])
+    >>> Person.c_decode(raw)
+    Person(age=23, adult=True)
+
+    """
 
     def c_size(self) -> int:
         return 1
@@ -199,19 +213,12 @@ class CBool(BaseType[bool]):
     def c_align(self) -> int:
         return 1
 
-    def c_signed(self) -> bool:
-        return False
-
     def c_decode(
         self,
         raw: bytes,
         *,
         is_little_endian: bool = True,
-        signed: bool | None = None,
     ) -> bool:
-        if signed is None:
-            signed = self.c_signed()
-
         if len(raw) != self.c_size():
             raise ValueError(
                 f"The raw bytes did not have the same lenght of the type! {self=} {len(raw)=}"
@@ -219,29 +226,36 @@ class CBool(BaseType[bool]):
 
         byteorder = "little" if is_little_endian else "big"
 
-        return bool.from_bytes(raw, byteorder=byteorder, signed=signed)
+        return bool.from_bytes(raw, byteorder=byteorder)
 
     def c_encode(
         self,
         data: bool,
         *,
         is_little_endian: bool = True,
-        signed: bool | None = None,
     ) -> bytes:
-        if signed is None:
-            signed = self.c_signed()
-
         byteorder = "little" if is_little_endian else "big"
 
-        return data.to_bytes(
-            length=self.c_size(),
-            byteorder=byteorder,
-            signed=signed,
-        )
+        return data.to_bytes(length=self.c_size(), byteorder=byteorder)
 
 
 class CFloat(Enum):
-    """Conforms to the IEEE 754 standard of encoded floating point numbers."""
+    """Conforms to the IEEE 754 standard of encoded floating point numbers.
+
+    Args:
+
+    Examples:
+
+    >>> from cstructimpl import *
+    >>> import struct
+    >>> class Point(CStruct):
+    ...     x: float
+    ...     y: float
+    >>> raw = struct.pack("<ff", 1.0, 22.0)
+    >>> Point.c_decode(raw)
+    Point(x=1.0, y=22.0)
+
+    """
 
     F32 = auto()
     F64 = auto()
@@ -275,18 +289,12 @@ class CFloat(Enum):
     def c_align(self) -> int:
         return self.c_size()
 
-    def c_signed(self) -> bool:
-        return False
-
     def c_decode(
         self,
         raw: bytes,
         *,
         is_little_endian: bool = True,
-        signed: bool | None = None,
     ) -> float:
-        _ = signed
-
         align = "<" if is_little_endian else ">"
 
         unpack = struct.unpack(align + self._float_fmt(), raw)
@@ -298,10 +306,7 @@ class CFloat(Enum):
         data: float,
         *,
         is_little_endian: bool = True,
-        signed: bool | None = None,
     ) -> bytes:
-        _ = signed
-
         align = "<" if is_little_endian else ">"
 
         return struct.pack(align + self._float_fmt(), data)
@@ -309,7 +314,21 @@ class CFloat(Enum):
 
 @dataclass
 class CArray(Generic[T], BaseType[list[T]]):
-    """Represents a generic sized array."""
+    """Represents a generic sized array.
+
+    Args:
+
+    Examples:
+
+    >>> from cstructimpl import *
+    >>> class Stream(CStruct):
+    ...     id: int
+    ...     values: Annotated[list[int], CArray(CType.U8, 4)]
+    >>> raw = bytes([20, 0, 0, 0, 1, 2, 3, 4])
+    >>> Stream.c_decode(raw)
+    Stream(id=20, values=[1, 2, 3, 4])
+
+    """
 
     ctype: BaseType[T]
     array_size: int
@@ -320,18 +339,12 @@ class CArray(Generic[T], BaseType[list[T]]):
     def c_align(self) -> int:
         return self.ctype.c_align()
 
-    def c_signed(self) -> bool:
-        raise NotImplementedError()
-
     def c_decode(
         self,
         raw: bytes,
         *,
         is_little_endian: bool = True,
-        signed: bool | None = None,
     ) -> list[T]:
-        _ = signed
-
         if len(raw) != self.c_size():
             raise ValueError(
                 f"The raw bytes did not have the same lenght of the type! {self=} {len(raw)=}"
@@ -352,10 +365,7 @@ class CArray(Generic[T], BaseType[list[T]]):
         data: list[T],
         *,
         is_little_endian: bool = True,
-        signed: bool | None = None,
     ) -> bytes:
-        _ = signed
-
         if len(data) != self.array_size:
             raise ValueError(
                 f"The length of the array is different from the one spcified in the CArray field! {len(data)=} {self.array_size=}"
@@ -369,7 +379,22 @@ class CArray(Generic[T], BaseType[list[T]]):
 
 @dataclass
 class CPadding(BaseType[None]):
-    """Represent padding bytes between the actual values."""
+    """Represent padding bytes between the actual values.
+
+    Args:
+
+    Examples:
+
+    >>> from cstructimpl import *
+    >>> class Point(CStruct):
+    ...     x: Annotated[int, CType.U8]
+    ...     padding: Annotated[None, CPadding(1)]
+    ...     y: Annotated[int, CType.U16]
+    >>> raw = bytes([1, 2, 3, 0])
+    >>> Point.c_decode(raw)
+    Point(x=1, padding=None, y=3)
+
+    """
 
     padding: int
 
@@ -379,31 +404,39 @@ class CPadding(BaseType[None]):
     def c_align(self) -> int:
         return self.padding
 
-    def c_signed(self) -> bool:
-        raise NotImplementedError("This method should not be called!")
-
     def c_decode(
         self,
         raw: bytes,
         *,
         is_little_endian: bool = True,
-        signed: bool | None = None,
     ) -> None:
-        _ = raw, is_little_endian, signed
+        _ = raw, is_little_endian
 
         return None
 
-    def c_encode(
-        self, data: None, *, is_little_endian: bool = True, signed: bool | None = None
-    ) -> bytes:
-        _ = data, is_little_endian, signed
+    def c_encode(self, data: None, *, is_little_endian: bool = True) -> bytes:
+        _ = data, is_little_endian
 
         return int(0).to_bytes(self.c_size(), byteorder="little", signed=False)
 
 
 @dataclass
 class CStr(BaseType[str]):
-    """Represents C string with a null-termination character."""
+    """Represents C string with a null-termination character.
+
+    Args:
+
+    Examples:
+
+    >>> from cstructimpl import *
+    >>> class Person(CStruct):
+    ...     age: int
+    ...     name: Annotated[str, CStr(8)]
+    >>> raw = bytes([18, 0, 0, 0]) + b'Peppino\\x00'
+    >>> Person.c_decode(raw)
+    Person(age=18, name='Peppino')
+
+    """
 
     array_size: int
     align: int = 1
@@ -415,17 +448,13 @@ class CStr(BaseType[str]):
     def c_align(self) -> int:
         return self.align
 
-    def c_signed(self) -> bool:
-        raise NotImplementedError("This method should not be called!")
-
     def c_decode(
         self,
         raw: bytes,
         *,
         is_little_endian: bool = True,
-        signed: bool | None = None,
     ) -> str:
-        _ = is_little_endian, signed
+        _ = is_little_endian
 
         if len(raw) != self.array_size:
             raise ValueError(
@@ -441,10 +470,8 @@ class CStr(BaseType[str]):
 
         return bytes(islice(raw, null_index)).decode(self.encoding)
 
-    def c_encode(
-        self, data: str, *, is_little_endian: bool = True, signed: bool | None = None
-    ) -> bytes:
-        _ = is_little_endian, signed
+    def c_encode(self, data: str, *, is_little_endian: bool = True) -> bytes:
+        _ = is_little_endian
 
         encoded = data.encode(encoding=self.encoding) + b"\x00"
         # Fill the ramining bytes with zero values
@@ -460,7 +487,27 @@ class CStr(BaseType[str]):
 
 @dataclass
 class CMapper(Generic[T, U], BaseType[T]):
-    """Builds a generic object starting from a `BaseType`."""
+    """Builds a generic object starting from a `BaseType`.
+
+    Args:
+
+    Examples:
+
+    >>> from cstructimpl import *
+    >>> from enum import Enum
+    >>> class ResultType(Enum):
+    ...     OK = 0
+    ...     ERROR = 1
+    >>> class Message(CStruct):
+    ...    kind: Annotated[ResultType, CMapper(CType.U8, ResultType, lambda r: r.value)]
+    ...    error_code: Annotated[int, CType.I32]
+    >>> raw = bytes([1, 0, 0, 0, 23, 0, 0, 0])
+    >>> Message.c_decode(raw)
+    Message(kind=<ResultType.ERROR: 1>, error_code=23)
+    >>> Message(ResultType.ERROR, 65).c_encode()
+    b'\\x01\\x00\\x00\\x00A\\x00\\x00\\x00'
+
+    """
 
     ctype: BaseType[U]
     decoder: Callable[[U | None], T]
@@ -472,25 +519,10 @@ class CMapper(Generic[T, U], BaseType[T]):
     def c_align(self) -> int:
         return self.ctype.c_align()
 
-    def c_signed(self) -> bool:
-        return self.ctype.c_signed()
+    def c_decode(self, raw: bytes, *, is_little_endian: bool = True) -> T:
+        return self.decoder(self.ctype.c_decode(raw, is_little_endian=is_little_endian))
 
-    def c_decode(
-        self, raw: bytes, *, is_little_endian: bool = True, signed: bool | None = None
-    ) -> T:
-        return self.decoder(
-            self.ctype.c_decode(
-                raw,
-                is_little_endian=is_little_endian,
-                signed=signed,
-            )
-        )
-
-    def c_encode(
-        self, data: T, *, is_little_endian: bool = True, signed: bool | None = None
-    ) -> bytes:
+    def c_encode(self, data: T, *, is_little_endian: bool = True) -> bytes:
         return self.ctype.c_encode(
-            self.encoder(data),
-            is_little_endian=is_little_endian,
-            signed=signed,
+            self.encoder(data), is_little_endian=is_little_endian
         )
