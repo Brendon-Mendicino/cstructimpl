@@ -167,11 +167,11 @@ Support for C-style null-terminated strings:
 ```pycon
 >>> class Message(CStruct):
 ...     length: Annotated[int, CInt.U16]
-...     text: Annotated[str, CStr(5)]
+...     text: Annotated[str, CStr(6)]
 ...
->>> raw = bytes([5, 0]) + b"Helo\\x00"
+>>> raw = bytes([5, 0]) + b"Hello\\x00"
 >>> Message.c_decode(raw)
-Message(length=5, text='Helo')
+Message(length=5, text='Hello')
 
 ```
 
@@ -259,6 +259,43 @@ LogEntry(timestamp=datetime.datetime(1970, ..., 55), level=3)
 
 ---
 
+## Bit-Fields
+
+Bit fields are very useful especially in the networking context, having
+the ability to name the bit ranges is very powerful. `cstructimpl` has
+the capability to reinterpret the bits into its own type system,
+enabling the use of all its tools, like autocasting, mapping, ...
+
+Example of a header call with bitfields as enumeration and
+optional flags.
+
+```pycon
+>>> from enum import IntFlag, IntEnum
+>>> class Flags(IntFlag):
+...     ACK = 1 << 0
+...     SYN = 1 << 1
+...     URG = 1 << 2
+...
+>>> class State(IntEnum):
+...     PENDING = 0
+...     ERROR = 1
+...     SUCCESS = 2
+...
+>>> class Header(CStruct):
+...     port: Annotated[int, CInt.U8, BitField(4)]
+...     id: Annotated[int, CInt.U8, BitField(4)]
+...     state: Annotated[State, CInt.U8, BitField(2), Autocast()]
+...     flags: Annotated[Flags, CInt.U8, BitField(3), Autocast()]
+...     len: Annotated[int, CInt.U8]
+...
+>>> raw = 0x101A21.to_bytes(3, byteorder="little", signed=False)
+>>> Header.c_decode(raw)
+Header(port=1, id=2, state=<State.SUCCESS: 2>, flags=<Flags.SYN|URG: 6>, len=16)
+
+```
+
+---
+
 ## Autocast
 
 Sometimes raw numeric values carry semantic meaning. In C, this is usually handled with `enum`s.
@@ -284,7 +321,7 @@ This is equivalent to writing a custom builder:
 ...     ERROR = 1
 ...
 >>> class Person(CStruct):
-...     kind: Annotated[ResultType, CMapper(CInt.U8, ResultType, lambda e: e.value)]
+...     kind: Annotated[ResultType, CMapper(CInt.U8, ResultType, int)]
 ...     error_code: Annotated[int, CInt.I32]
 ...
 
@@ -350,7 +387,7 @@ from .c_types import (
     CFloat,
 )
 from .c_lib import c_struct, CStruct
-from .c_annotations import Autocast
+from .c_annotations import Autocast, BitField
 
 
 __all__ = [
@@ -369,4 +406,5 @@ __all__ = [
     "c_struct",
     "CStruct",
     "Autocast",
+    "BitField",
 ]

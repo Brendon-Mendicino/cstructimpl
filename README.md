@@ -166,11 +166,11 @@ Support for C-style null-terminated strings:
 ```pycon
 >>> class Message(CStruct):
 ...     length: Annotated[int, CInt.U16]
-...     text: Annotated[str, CStr(5)]
-... 
->>> raw = bytes([5, 0]) + b"Helo\x00"
+...     text: Annotated[str, CStr(6)]
+...
+>>> raw = bytes([5, 0]) + b"Hello\x00"
 >>> Message.c_decode(raw)
-Message(length=5, text='Helo')
+Message(length=5, text='Hello')
 
 ```
 
@@ -184,11 +184,11 @@ Automatically cast numeric values into Python `Enum`s:
 >>> class Mood(IntEnum):
 ...     HAPPY = 0
 ...     SAD = 1
-... 
+...
 >>> class Person(CStruct):
 ...     age: Annotated[int, CInt.U16]
 ...     mood: Annotated[Mood, CInt.U8, Autocast()]
-... 
+...
 >>> raw = bytes([18, 0, 1, 0])
 >>> Person.c_decode(raw)
 Person(age=18, mood=<Mood.SAD: 1>)
@@ -206,10 +206,10 @@ Define fixed-size arrays of structs inside another struct:
 ...     a: Annotated[int, CInt.U8]
 ...     b: Annotated[int, CInt.U8]
 ...     c: Annotated[int, CInt.U8]
-... 
+...
 >>> class ItemList(CStruct):
 ...     items: Annotated[list[Item], CArray(Item, 3)]
-... 
+...
 >>> data = bytes(range(1, 13))  # 3 items x 4 bytes each
 >>> parsed = ItemList.c_decode(data)
 >>> parsed == ItemList([
@@ -236,23 +236,60 @@ For example, here's a custom type that interprets a raw integer as a **Unix time
 >>> class UnixTimestamp(BaseType[datetime]):
 ...     def c_size(self) -> int:
 ...         return 4
-... 
+...
 ...     def c_align(self) -> int:
 ...         return 4
-... 
+...
 ...     def c_decode(self, raw: bytes, *, is_little_endian: bool = True) -> datetime:
 ...         byteorder = "little" if is_little_endian else "big"
 ...         ts = int.from_bytes(raw, byteorder=byteorder, signed=False)
 ...         return datetime.fromtimestamp(ts)
-... 
+...
 ...     def c_encode(self): pass
-... 
+...
 >>> class LogEntry(CStruct):
 ...     timestamp: Annotated[datetime, UnixTimestamp()]
 ...     level: Annotated[int, CInt.U8]
-... 
+...
 >>> LogEntry.c_decode(bytes([55, 0, 0, 0, 3, 0, 0, 0]))
 LogEntry(timestamp=datetime.datetime(1970, ..., 55), level=3)
+
+```
+
+---
+
+## Bit-Fields
+
+Bit fields are very useful especially in the networking context, having
+the ability to name the bit ranges is very powerful. `cstructimpl` has
+the capability to reinterpret the bits into its own type system,
+enabling the use of all its tools, like autocasting, mapping, ...
+
+Example of a header call with bitfields as enumeration and
+optional flags.
+
+```pycon
+>>> from enum import IntFlag, IntEnum
+>>> class Flags(IntFlag):
+...     ACK = 1 << 0
+...     SYN = 1 << 1
+...     URG = 1 << 2
+...
+>>> class State(IntEnum):
+...     PENDING = 0
+...     ERROR = 1
+...     SUCCESS = 2
+...
+>>> class Header(CStruct):
+...     port: Annotated[int, CInt.U8, BitField(4)]
+...     id: Annotated[int, CInt.U8, BitField(4)]
+...     state: Annotated[State, CInt.U8, BitField(2), Autocast()]
+...     flags: Annotated[Flags, CInt.U8, BitField(3), Autocast()]
+...     len: Annotated[int, CInt.U8]
+...
+>>> raw = 0x101A21.to_bytes(3, byteorder="little", signed=False)
+>>> Header.c_decode(raw)
+Header(port=1, id=2, state=<State.SUCCESS: 2>, flags=<Flags.SYN|URG: 6>, len=16)
 
 ```
 
@@ -267,7 +304,7 @@ With `cstructimpl`, you can automatically reinterpret values into enums (or othe
 >>> class ResultType(IntEnum):
 ...     OK = 0
 ...     ERROR = 1
-... 
+...
 >>> class Person(CStruct):
 ...     kind: Annotated[ResultType, CInt.U8, Autocast()]
 ...     error_code: Annotated[int, CInt.I32]
@@ -281,9 +318,9 @@ This is equivalent to writing a custom builder:
 >>> class ResultType(IntEnum):
 ...     OK = 0
 ...     ERROR = 1
-... 
+...
 >>> class Person(CStruct):
-...     kind: Annotated[ResultType, CMapper(CInt.U8, ResultType, lambda e: e.value)]
+...     kind: Annotated[ResultType, CMapper(CInt.U8, ResultType, int)]
 ...     error_code: Annotated[int, CInt.I32]
 ...
 

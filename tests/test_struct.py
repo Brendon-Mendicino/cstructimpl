@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
+from enum import Enum, IntEnum, IntFlag
 import math
 from pprint import pp
 import struct
@@ -119,9 +119,9 @@ def test_struct_with_string():
     @dataclass
     class SWithStr(CStruct):
         size: Annotated[int, CInt.U16]
-        string: Annotated[str, CStr(5)]
+        string: Annotated[str, CStr(6)]
 
-    assert SWithStr.c_decode(bytes([5, 0]) + b"Helo\x00") == SWithStr(5, "Helo")
+    assert SWithStr.c_decode(bytes([5, 0]) + b"Hello\x00") == SWithStr(5, "Hello")
 
 
 def test_autocast_with_enums():
@@ -246,3 +246,96 @@ def test_packed_struct():
 
     assert Outer.c_decode(raw) == actual
     assert actual.c_encode() == raw
+
+
+def test_bitfields_basics():
+    @dataclass
+    class Header(CStruct):
+        a: Annotated[int, CInt.U8, BitField(4)]
+        b: Annotated[int, CInt.U8, BitField(4)]
+
+    header = Header(1, 2)
+
+    assert Header.c_size() == 1
+
+    assert Header.c_decode(0x21.to_bytes(1, byteorder="little")) == header
+
+    assert (
+        Header.c_decode(0x21.to_bytes(1, byteorder="big"), is_little_endian=False)
+        == header
+    )
+
+    assert header.c_encode() == 0x21.to_bytes(1, byteorder="little", signed=False)
+
+
+def test_bitfields_inner_paddings():
+    @dataclass
+    class Header(CStruct):
+        a: Annotated[int, CInt.U8, BitField(7)]
+        b: Annotated[int, CInt.U8, BitField(4)]
+        c: Annotated[int, CInt.U8, BitField(5)]
+
+    assert Header.c_size() == 3
+    assert Header.c_align() == 1
+    assert Header(0xFF, 0xFF, 0xFF).c_encode() == 0x1F0F7F.to_bytes(
+        3, byteorder="little", signed=False
+    )
+
+
+def test_bitfields_decoding():
+    @dataclass
+    class Header(CStruct):
+        a: Annotated[int, CInt.U8, BitField(7)]
+        b: Annotated[int, CInt.U8, BitField(4)]
+        c: Annotated[int, CInt.U8, BitField(5)]
+
+    assert Header.c_decode(bytes([0xFF, 0xFF, 0xFF])) == Header(0x7F, 0x0F, 0x1F)
+
+
+def test_bitfields_different_sizes():
+    @dataclass
+    class Header(CStruct):
+        a: Annotated[int, CInt.U16, BitField(1)]
+        b: Annotated[int, CInt.U16, BitField(1)]
+        c: Annotated[int, CInt.U8, BitField(1)]
+
+    assert Header.c_size() == 4
+    assert Header.c_decode(
+        0x010002.to_bytes(4, byteorder="little", signed=False)
+    ) == Header(0, 1, 1)
+
+
+def test_bitfields_with_end_marker():
+    @dataclass
+    class Header(CStruct):
+        a: Annotated[int, CInt.U16, BitField(1)]
+        b: Annotated[int, CInt.U16, BitField(1, True)]
+        c: Annotated[int, CInt.U16, BitField(1)]
+
+    assert Header.c_size() == 4
+    assert Header.c_decode(
+        (2 | (1 << 2 * 8)).to_bytes(4, byteorder="little", signed=False)
+    ) == Header(0, 1, 1)
+
+
+def test_bitfields_with_autocasting():
+    class Kind(IntEnum):
+        A = 0
+        B = 1
+        C = 2
+        D = 3
+
+    class Option(IntFlag):
+        X = 1 << 0
+        Y = 1 << 1
+        W = 1 << 2
+        Z = 1 << 3
+
+    @dataclass
+    class Header(CStruct):
+        a: Annotated[Kind, CInt.U8, BitField(4), Autocast()]
+        b: Annotated[Option, CInt.U8, BitField(4), Autocast()]
+
+    raw = 0x62.to_bytes(1, byteorder="little", signed=False)
+    assert Header.c_size() == 1
+    assert Header.c_decode(raw) == Header(Kind.C, Option.Y | Option.W)

@@ -8,7 +8,6 @@ from typing import (
     Generic,
     Protocol,
     TypeVar,
-    Annotated,
     cast,
     runtime_checkable,
 )
@@ -107,10 +106,10 @@ class CInt(Enum):
 
     Examples:
 
-    >>> from cstructimpl import *
     >>> class Point(CStruct):
     ...     x: Annotated[int, CInt.U16]
     ...     y: Annotated[int, CInt.U8]
+    ...
     >>> Point.c_decode(bytes([1, 0, 2, 0]))
     Point(x=1, y=2)
 
@@ -126,6 +125,22 @@ class CInt(Enum):
     U64 = auto()
     I128 = auto()
     U128 = auto()
+
+    @classmethod
+    def get_unsigned(cls, size: int):
+        match size:
+            case 1:
+                return cls.U8
+            case 2:
+                return cls.U16
+            case 4:
+                return cls.U32
+            case 8:
+                return cls.U64
+            case 16:
+                return cls.U128
+            case _:
+                raise ValueError(f"{size=} is not valid!")
 
     def c_size(self) -> int:
         match self:
@@ -197,7 +212,6 @@ class CBool(BaseType[bool]):
 
     Examples:
 
-    >>> from cstructimpl import *
     >>> class Person(CStruct):
     ...     age: int
     ...     adult: Annotated[bool, CBool()]
@@ -246,7 +260,6 @@ class CFloat(Enum):
 
     Examples:
 
-    >>> from cstructimpl import *
     >>> import struct
     >>> class Point(CStruct):
     ...     x: float
@@ -295,6 +308,11 @@ class CFloat(Enum):
         *,
         is_little_endian: bool = True,
     ) -> float:
+        if len(raw) != self.c_size():
+            raise ValueError(
+                f"The raw bytes did not have the same lenght of the type! {self=} {len(raw)=}"
+            )
+
         align = "<" if is_little_endian else ">"
 
         unpack = struct.unpack(align + self._float_fmt(), raw)
@@ -320,7 +338,6 @@ class CArray(Generic[T], BaseType[list[T]]):
 
     Examples:
 
-    >>> from cstructimpl import *
     >>> class Stream(CStruct):
     ...     id: int
     ...     values: Annotated[list[int], CArray(CInt.U8, 4)]
@@ -385,7 +402,6 @@ class CPadding(BaseType[None]):
 
     Examples:
 
-    >>> from cstructimpl import *
     >>> class Point(CStruct):
     ...     x: Annotated[int, CInt.U8]
     ...     padding: Annotated[None, CPadding(1)]
@@ -428,7 +444,6 @@ class CStr(BaseType[str]):
 
     Examples:
 
-    >>> from cstructimpl import *
     >>> class Person(CStruct):
     ...     age: int
     ...     name: Annotated[str, CStr(8)]
@@ -493,7 +508,6 @@ class CMapper(Generic[T, U], BaseType[T]):
 
     Examples:
 
-    >>> from cstructimpl import *
     >>> from enum import Enum
     >>> class ResultType(Enum):
     ...     OK = 0
@@ -526,3 +540,25 @@ class CMapper(Generic[T, U], BaseType[T]):
         return self.ctype.c_encode(
             self.encoder(data), is_little_endian=is_little_endian
         )
+
+
+@dataclass
+class _MarkerBitField(BaseType[T]):
+    """BitField marker class."""
+
+    inner: BaseType[T]
+    cint: CInt
+    field_size: int
+    end_marker: bool
+
+    def c_size(self) -> int:
+        return self.inner.c_size()
+
+    def c_align(self) -> int:
+        return self.inner.c_align()
+
+    def c_decode(self, raw: bytes, *, is_little_endian: bool = True) -> T | None:
+        return self.inner.c_decode(raw, is_little_endian=is_little_endian)
+
+    def c_encode(self, data: T, *, is_little_endian: bool = True) -> bytes:
+        return self.inner.c_encode(data, is_little_endian=is_little_endian)

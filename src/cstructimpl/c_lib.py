@@ -11,9 +11,18 @@ from typing import (
     get_origin,
 )
 
-from .util import hybridmethod
-from .c_annotations import Autocast
-from .c_types import BaseType, CBool, CMapper, HasBaseType, CPadding, CInt, CFloat
+from .util import hybridmethod, peekable
+from .c_annotations import Autocast, BitField
+from .c_types import (
+    BaseType,
+    CBool,
+    CMapper,
+    HasBaseType,
+    CPadding,
+    CInt,
+    CFloat,
+    _MarkerBitField,
+)
 
 if sys.version_info >= (3, 11):
     from typing import Self
@@ -34,6 +43,157 @@ class _MarkerPadding(CPadding):
     pass
 
 
+class _BytesIter:
+    """BytesIter"""
+
+    def __init__(self, raw: bytes) -> None:
+        self.raw = raw
+        self.raw_iter = islice(raw, None)
+
+        # self.bit_field: CInt | None = None
+        # self.bit_field_int = 0
+        # self.bit_field_fill = 0
+
+    # def _reset_bit_field(self):
+    #     self.bit_field = None
+    #     self.bit_field_int = 0
+    #     self.bit_field_fill = 0
+
+    # def _init_bit_field(self, bit_field: _MarkerBitField):
+    #     bit_field_bytes = self.next(bit_field.cint.c_size())
+    #     bit_filed_int = bit_field.cint.c_decode(bit_field_bytes)
+
+    #     self.bit_field = bit_field.cint
+    #     self.bit_field_int = bit_filed_int
+    #     self.bit_field_fill = 0
+
+    def next(self, no_bytes: int) -> bytes:
+        # self._reset_bit_field()
+        return bytes(islice(self.raw_iter, no_bytes))
+
+    # def next_bitfield(self, bit_field: _MarkerBitField) -> bytes:
+    #     if self.bit_field != bit_field.cint:
+    #         self._init_bit_field(bit_field)
+
+    #     no_bits = bit_field.c_size() * 8
+
+    #     if self.bit_field_fill + bit_field.field_size > no_bits:
+    #         self._init_bit_field(bit_field)
+
+    #     masked_int = self.bit_field_int & ((1 << bit_field.field_size) - 1)
+
+    #     # Shift the bit field value
+    #     self.bit_field_int >>= bit_field.field_size
+    #     self.bit_field_fill += bit_field.field_size
+
+    #     return bit_field.c_encode(masked_int)
+
+
+@dataclass
+class _BitFieldAggregator(BaseType):
+    """Aggregate bitfields annotations and processes the
+    specified bytes togheter."""
+
+    bitfields: list[_MarkerBitField]
+
+    def __post_init__(self):
+        first = self.bitfields[0]
+        for b in self.bitfields:
+            if first.cint != b.cint:
+                raise ValueError(
+                    f"Initialization of {self.__class__.__name__} failed! The bitfields have different cint! {self.bitfields}"
+                )
+
+    def c_size(self) -> int:
+        return self.bitfields[0].c_size()
+
+    def c_align(self) -> int:
+        return self.bitfields[0].c_align()
+
+    def c_decode(
+        self, raw: bytes, *, is_little_endian: bool = True
+    ) -> tuple[bytes, ...]:
+        cint = self.bitfields[0].cint
+        bitfield_value = cint.c_decode(raw, is_little_endian=is_little_endian)
+        decoded_values = []
+
+        for bitfield in self.bitfields:
+            masked_value = bitfield_value & ((1 << bitfield.field_size) - 1)
+
+            value_to_decode = cint.c_encode(
+                masked_value, is_little_endian=is_little_endian
+            )
+
+            decoded = bitfield.c_decode(
+                value_to_decode, is_little_endian=is_little_endian
+            )
+
+            decoded_values.append(decoded)
+
+            # Shift bitfield value by the current bit size
+            bitfield_value >>= bitfield.field_size
+
+        assert len(self.bitfields) == len(decoded_values)
+
+        return tuple(decoded_values)
+
+    def c_encode(self, data: tuple, *, is_little_endian: bool = True) -> bytes:
+        assert len(self.bitfields) == len(data)
+
+        cint = self.bitfields[0].cint
+        bit_offset = 0
+        bitfield_value = 0
+
+        for bitfield, field_data in zip(self.bitfields, data):
+            bit_raw = bitfield.c_encode(field_data, is_little_endian=is_little_endian)
+            bitfield_part = cint.c_decode(bit_raw, is_little_endian=is_little_endian)
+
+            mask = (1 << bitfield.field_size) - 1
+            bitfield_value |= (bitfield_part & mask) << bit_offset
+            bit_offset += bitfield.field_size
+
+        return cint.c_encode(bitfield_value, is_little_endian=is_little_endian)
+
+
+class _bit_field_acc:
+    """Bit Filed accumulator. Group togheter the fields that
+    should be part of a shared bitfield value."""
+
+    def __init__(self, pipeline: list[BaseType]) -> None:
+        self.pipeline = peekable(pipeline)
+
+    def __next__(self):
+        adj_bitfields = []
+        prev_cint = None
+        no_bits = 0
+
+        while bitfield := self.pipeline.peek():
+            if not isinstance(bitfield, _MarkerBitField):
+                break
+
+            if prev_cint and bitfield.cint != prev_cint:
+                break
+
+            prev_cint = bitfield.cint
+
+            if no_bits + bitfield.field_size > bitfield.cint.c_size() * 8:
+                break
+
+            no_bits += bitfield.field_size
+            adj_bitfields.append(next(self.pipeline))
+
+            if bitfield.end_marker:
+                break
+
+        if adj_bitfields:
+            return _BitFieldAggregator(adj_bitfields)
+        else:
+            return next(self.pipeline)
+
+    def __iter__(self):
+        return self
+
+
 def _get_origin(t: type) -> type:
     origin = getattr(t, "__origin__", t)
     return get_origin(origin) or origin
@@ -51,9 +211,9 @@ def _get_field_metadata(f: Field) -> tuple | None:
     return _get_metadata(f.type)
 
 
-def _is_autocast(f: Field) -> Autocast | None:
+def _is_annotation(f: Field, annotation: type[T]) -> T | None:
     autocast = _get_field_metadata(f) or tuple()
-    autocast = filter(lambda f: isinstance(f, Autocast), autocast)
+    autocast = filter(lambda f: isinstance(f, annotation), autocast)
     return next(autocast, None)
 
 
@@ -98,7 +258,8 @@ def _types_from_dataclass(cls: type) -> list[BaseType]:
     base_types = list[BaseType]()
 
     for field in fields(cls):
-        autocast = _is_autocast(field)
+        autocast = _is_annotation(field, Autocast)
+        bitfield = _is_annotation(field, BitField)
         base_type = _get_basetype(field)
 
         if base_type is None:
@@ -117,23 +278,42 @@ def _types_from_dataclass(cls: type) -> list[BaseType]:
 
             base_type = CMapper(base_type, cls_field_type, ret_type)
 
+        if bitfield:
+            try:
+                cint = CInt.get_unsigned(base_type.c_size())
+            except Exception as e:
+                raise ValueError(
+                    f"Failed to associate an int kind to the {field.name=} of {cls=}. The c_size of the BaseType must be one the sizes of the CInt variants."
+                ) from e
+
+            base_type = _MarkerBitField(
+                base_type, cint, bitfield.field_size, bitfield.end_marker
+            )
+
         base_types.append(base_type)
 
     return base_types
 
 
 def _strict_dataclass_fields_check(cls: type, cls_items: list):
+    if len(fields(cls)) != len(cls_items):
+        raise ValueError(
+            f"Error while constructing {cls}. Mismatch between number of fields and items to assing."
+        )
+
     for field, item in zip(fields(cls), cls_items):
         ftype = _get_field_origin(field)
 
         if not isinstance(item, ftype):
             raise ValueError(
-                f"Cannot assign value of type {type(item)=} to dataclass field {field.name=} of type {field.type=}"
+                f"Error while constructing {cls}. Cannot assign value of type {type(item)=} to dataclass field {field.name=} of type {field.type=}"
             )
 
 
 @dataclass
 class _Pipeline:
+    """Pipeline."""
+
     pipeline: list[BaseType]
     size: int
     align: int
@@ -146,7 +326,7 @@ class _Pipeline:
         current_size = 0
         current_align = 0
 
-        for ctype in ctypes:
+        for ctype in _bit_field_acc(ctypes):
             padding = -current_size % ctype.c_align()
 
             if padding != 0:
@@ -177,7 +357,7 @@ class _Pipeline:
         pipeline = list[BaseType]()
         current_size = 0
 
-        for ctype in ctypes:
+        for ctype in _bit_field_acc(ctypes):
             current_size += ctype.c_size()
             pipeline.append(ctype)
 
@@ -204,18 +384,27 @@ class _StructTypeHandler(BaseType[T]):
         return self.pipeline.align
 
     def c_decode(self, raw: bytes, *, is_little_endian: bool = True) -> T:
-        raw_slice = islice(raw, None)
+        if len(raw) != self.c_size():
+            raise ValueError(
+                f"The raw bytes did not have the same lenght of the type! {self=} {len(raw)=}"
+            )
+
+        bytes_iter = _BytesIter(raw)
         cls_items = []
 
         for pipe_item in self.pipeline.pipeline:
-            raw_bytes = bytes(islice(raw_slice, pipe_item.c_size()))
+            raw_bytes = bytes_iter.next(pipe_item.c_size())
 
             if isinstance(pipe_item, _MarkerPadding):
                 continue
 
             cls_item = pipe_item.c_decode(raw_bytes, is_little_endian=is_little_endian)
 
-            cls_items.append(cls_item)
+            if isinstance(pipe_item, _BitFieldAggregator):
+                assert isinstance(cls_item, tuple)
+                cls_items.extend(cls_item)
+            else:
+                cls_items.append(cls_item)
 
         if self.strict:
             _strict_dataclass_fields_check(self.cls, cls_items)
@@ -231,8 +420,13 @@ class _StructTypeHandler(BaseType[T]):
                 raw_data += pipe_item.c_encode(None, is_little_endian=is_little_endian)
                 continue
 
+            if isinstance(pipe_item, _BitFieldAggregator):
+                data_to_encode = tuple(islice(data_fields, len(pipe_item.bitfields)))
+            else:
+                data_to_encode = next(data_fields)
+
             raw_data += pipe_item.c_encode(
-                next(data_fields), is_little_endian=is_little_endian
+                data_to_encode, is_little_endian=is_little_endian
             )
 
         return raw_data
